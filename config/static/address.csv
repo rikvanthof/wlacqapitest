@@ -1,0 +1,4 @@
+address_id,cardholder_postal_code,cardholder_address
+AVS_FULL,000008021,Hardturmstrasse 201
+AVS_PARTIAL_ZIP,000008022,Hardturmstrasse 201
+AVS_PARTIAL_ADDRESS,000008021,Hardturmstrasse 202

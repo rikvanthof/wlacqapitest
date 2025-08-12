@@ -1,6 +1,10 @@
 # Project specific
 outputs/*
-config/
+
+# Configuration credentials (keep private)
+config/credentials/
+*.env
+.env
 
 # macOS-specific files
 .DS_Store
@@ -12,7 +16,6 @@ Icon?
 venv/
 .venv/
 env/
-.env
 
 # Python
 __pycache__/

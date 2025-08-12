@@ -1,0 +1,3 @@
+networktoken_id,wallet_id,network_token_cryptogram,network_token_eci
+APPLE_PAY_VISA,103,/wAAAAEACwuDlYgAAAAAgIRgE4A=,05
+APPLE_PAY_MASTERCARD,103,/wAAAAEACwuDlYgAAAAAgIRgE4A=,02

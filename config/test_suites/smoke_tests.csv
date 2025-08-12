@@ -1,0 +1,13 @@
+chain_id,step_order,call_type,test_id,tags,defer_execution,card_id,merchant_id,env,amount,currency,authorization_type,allow_partial_approval,capture_immediately,card_entry_mode,cardholder_verification_method,dynamic_descriptor,address_data,threed_secure_data,network_token_data
+chain1,1,create_payment,TEST001,"smoke,visa,basic",null,card07,merchant1,preprod,100,GBP,PRE_AUTHORIZATION,null,FALSE,ECOMMERCE,CARD_SECURITY_CODE,null,null,null,null
+chain1,2,capture_payment,TEST002,"smoke,visa",null,null,merchant1,preprod,null,null,null,null,null,null,null,null,null,null,null
+chain2,1,create_payment,TEST003,"regression,mastercard,3ds",null,card20,merchant1,preprod,200,EUR,PRE_AUTHORIZATION,null,FALSE,ECOMMERCE,CARD_SECURITY_CODE,null,null,MASTERCARD_FULL,null
+chain3,1,create_payment,RC01,,null,card07,merchant1,preprod,1000.0,GBP,FINAL_AUTHORIZATION,,False,MAIL,NONE,,,,,,
+chain4,1,create_payment,RC02,,null,card07,merchant1,preprod,2000.0,GBP,FINAL_AUTHORIZATION,True,False,ECOMMERCE,THREE_DS,Pietje Puk,AVS_PARTIAL_ZIP,MASTERCARD_FULL,,,
+chain5,1,create_payment,API0010,,null,card20,merchant1,preprod,123.0,GBP,PRE_AUTHORIZATION,,False,ECOMMERCE,CARD_SECURITY_CODE,,AVS_FULL,,APPLE_PAY_VISA,,
+chain5,2,increment_payment,API0020,,null,card20,merchant1,preprod,50.0,GBP,,,,,,,,,,,
+chain5,3,capture_payment,API0021,,null,card20,merchant1,preprod,75.0,GBP,,,,,,Describ01,,,,,
+chain5,4,capture_payment,API0022,,null,card20,merchant1,preprod,50.0,GBP,,,,,,Describ02,,,,,
+chain5,5,refund_payment,API0023,,null,card20,merchant1,preprod,,,,,,,,,,,,,
+chain5,6,get_payment,API0024,,null,card20,merchant1,preprod,,GBP,,,,,,,,,,,
+chain5,7,get_refund,API0025,,null,card20,merchant1,preprod,,GBP,,,,,,,,,,,

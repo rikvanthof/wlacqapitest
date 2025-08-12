@@ -1,0 +1,8 @@
+merchant,env,acquirer_id,merchant_id,merchant_description
+merchant1,preprod,100812,520001857,Pre-prod ECOM/DCC Ixopay (520001857)
+merchant2,preprod,100812,520002898,Pre-prod ECOM/DCC Yuliia (520002898)
+merchant3,preprod,100812,520002526,Pre-prod ECOM/DCC (520002526)
+merchant4,preprod,100812,520002558,Pre-prod POS/DCC (520002558)
+merchant5,preprod,100812,520002533,Pre-prod MOTO/no DCC (520002533)
+merchant6,dev,100812,520000443,Dev ECOM/DCC (520000443)
+merchant7,dev,100812,520000468,Dev POS/DCC (520000468)
