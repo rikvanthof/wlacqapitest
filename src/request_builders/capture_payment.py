@@ -26,10 +26,11 @@ def build_capture_payment_request(row):
     request.references = references
     
     # Set amount
-    amount_data = AmountData()
-    amount_data.amount = int(row['amount'])
-    amount_data.currency_code = row['currency']
-    amount_data.number_of_decimals = 2
-    request.amount = amount_data
+    if pd.notna(row.get('amount')) and row.get('amount') != '':
+        amount_data = AmountData()
+        amount_data.amount = int(float(row['amount']))  # Handle both int and float
+        amount_data.currency_code = row['currency']
+        amount_data.number_of_decimals = 2
+        request.amount = amount_data
     
     return clean_request(request)
