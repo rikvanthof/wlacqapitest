@@ -56,15 +56,20 @@ REQUEST_BUILDERS = {
 results_lock = Lock()
 
 def parse_arguments():
-    """Parse command line arguments"""
+    """Enhanced argument parsing with tag support"""
     parser = argparse.ArgumentParser(
-        description='Run payment API tests with configurable threading and test files',
+        description='Run payment API tests with configurable threading, test files, and tag filtering',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python test_runner.py                                    # Sequential execution with default tests
   python test_runner.py --threads 3                       # Parallel execution with 3 threads
-  python test_runner.py --tests config/smoke_tests.csv    # Use specific test file
+  python -m src.main --tests smoke_tests.csv              # Specific test suite
+  python -m src.main --tags "smoke,visa"                  # Only tests with smoke AND visa tags
+  python -m src.main --include-tags smoke --include-tags visa  # Tests with smoke OR visa
+  python -m src.main --exclude-tags slow                  # Exclude tests with slow tag
+  python -m src.main --list-test-suites                   # Show available test suites
+  python -m src.main --list-tags                          # Show all available tags
   python test_runner.py --log-level DEBUG --log-file      # Debug logging to file
   python test_runner.py --threads 5 --log-level INFO     # Parallel with info logging
         """
@@ -80,8 +85,8 @@ Examples:
     parser.add_argument(
         '--tests', '-f',
         type=str,
-        default='config/tests.csv',
-        help='Path to the test CSV file (default: config/tests.csv)'
+        default='smoke_tests.csv',  # ✅ NEW: Points to test_suites directory
+        help='Path to the test CSV file (default: smoke_tests.csv)'  # ✅ NEW: Updated help
     )
     
     parser.add_argument(
@@ -108,6 +113,37 @@ Examples:
         type=str,
         default=None,
         help='Custom path for log file (implies --log-file)'
+    )
+    
+    # Tag filtering arguments
+    parser.add_argument(
+        '--tags',
+        type=str,
+        help='Include tests with ALL of these tags (comma-separated, AND logic)'
+    )
+    
+    parser.add_argument(
+        '--include-tags',
+        action='append',
+        help='Include tests with ANY of these tags (can specify multiple times, OR logic)'
+    )
+    
+    parser.add_argument(
+        '--exclude-tags',
+        type=str,
+        help='Exclude tests with these tags (comma-separated)'
+    )
+    
+    parser.add_argument(
+        '--list-test-suites',
+        action='store_true',
+        help='List all available test suite files'
+    )
+    
+    parser.add_argument(
+        '--list-tags',
+        action='store_true',
+        help='List all available tags in the specified test suite'
     )
     
     return parser.parse_args()
@@ -368,7 +404,57 @@ def main():
     try:
         # Load configuration data
         logger.debug("Loading configuration data...")
-        environments, cards, merchants, address, networktokens, threeds, tests = load_data(args.tests)
+        from .config.config_manager import ConfigurationManager
+        from .core.tag_filter import TagFilter
+        
+        config_manager = ConfigurationManager()
+        config_set = config_manager.load_all_configs(args.tests)
+        
+        # Handle list operations
+        if args.list_test_suites:
+            available_suites = config_manager.list_available_test_suites()
+            print("📋 Available test suites:")
+            for suite in available_suites:
+                print(f"  - {suite}")
+            return
+        
+        if args.list_tags:
+            all_tags = config_manager.get_all_tags(config_set.tests)
+            print(f"🏷️ Available tags in {args.tests}:")
+            for tag in all_tags:
+                print(f"  - {tag}")
+            return
+        
+        # Apply tag filtering
+        original_test_count = len(config_set.tests)
+        if args.tags or args.include_tags or args.exclude_tags:
+            # Create tag filter
+            include_list = []
+            if args.tags:
+                include_list = [tag.strip() for tag in args.tags.split(',')]
+                require_all = True  # AND logic for --tags
+            elif args.include_tags:
+                include_list = args.include_tags
+                require_all = False  # OR logic for --include-tags
+            
+            exclude_list = []
+            if args.exclude_tags:
+                exclude_list = [tag.strip() for tag in args.exclude_tags.split(',')]
+            
+            tag_filter = TagFilter(include_list, exclude_list, require_all)
+            config_set.tests = tag_filter.filter_tests(config_set.tests)
+            
+            logger.info(f"🏷️ Tag filtering: {original_test_count} → {len(config_set.tests)} tests")
+        
+        # Convert back to original format for compatibility
+        environments = config_set.environments
+        cards = config_set.cards
+        merchants = config_set.merchants
+        address = config_set.address
+        networktokens = config_set.networktokens
+        threeds = config_set.threeds
+        tests = config_set.tests
+        
         
         # Execute test chains
         start_time = time.time()
