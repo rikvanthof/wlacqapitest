@@ -1,0 +1,6 @@
+acquiring-sdk-python
+pandas
+sqlalchemy
+flask
+dash
+plotly

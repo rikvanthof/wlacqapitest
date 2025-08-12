@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment API Testing Framework - User Guide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 25px;
+        }
+        code {
+            background-color: #f1f2f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        .alert {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .alert-info {
+            background-color: #e3f2fd;
+            border-color: #2196f3;
+            color: #0277bd;
+        }
+        .alert-warning {
+            background-color: #fff3e0;
+            border-color: #ff9800;
+            color: #ef6c00;
+        }
+        .alert-success {
+            background-color: #e8f5e8;
+            border-color: #4caf50;
+            color: #2e7d32;
+        }
+        .toc {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        .toc ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .toc li {
+            margin: 5px 0;
+        }
+        .toc a {
+            text-decoration: none;
+            color: #3498db;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Payment API Testing Framework - User Guide</h1>
+        
+        <div class="toc">
+            <h3>Table of Contents</h3>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#quick-start">Quick Start</a></li>
+                <li><a href="#how-it-works">How It Works</a></li>
+                <li><a href="#configuration">Configuration Files</a></li>
+                <li><a href="#threading">Threading Behavior</a></li>
+                <li><a href="#error-handling">Error Handling</a></li>
+                <li><a href="#output-format">Output Format</a></li>
+                <li><a href="#best-practices">Best Practices</a></li>
+                <li><a href="#troubleshooting">Troubleshooting</a></li>
+            </ul>
+        </div>
+
+        <h2 id="overview">Overview</h2>
+        <p>The Payment API Testing Framework is a comprehensive tool for testing Worldline Acquiring API endpoints. It supports end-to-end payment scenarios with chained API calls, parallel execution, and detailed result tracking.</p>
+
+        <h2 id="quick-start">Quick Start</h2>
+        
+        <h3>Basic Test Execution</h3>
+        <p>Run tests with default settings (sequential execution):</p>
+        <pre><code>python -m src.main</code></pre>
+
+        <h3>Common Usage Patterns</h3>
+        
+        <p><strong>Parallel execution with 3 threads:</strong></p>
+        <pre><code>python -m src.main --threads 3</code></pre>
+
+        <p><strong>Use custom test file:</strong></p>
+        <pre><code>python -m src.main --tests config/smoke_tests.csv</code></pre>
+
+        <p><strong>Verbose output for debugging:</strong></p>
+        <pre><code>python -m src.main --verbose</code></pre>
+
+        <p><strong>Combined options:</strong></p>
+        <pre><code>python -m src.main --tests config/regression.csv --threads 5 --verbose</code></pre>
+
+        <h2 id="how-it-works">How It Works</h2>
+
+        <h3>1. Test Chain Execution</h3>
+        <p>The framework organizes tests into <strong>chains</strong> - sequences of related API calls that depend on each other:</p>
+        
+        <pre><code>Chain Example:
+1. create_payment  → generates payment_id
+2. increment_payment → uses payment_id from step 1
+3. capture_payment → uses payment_id from step 1  
+4. refund_payment  → uses payment_id, generates refund_id
+5. get_refund      → uses refund_id from step 4</code></pre>
+
+        <h3>2. Dependency Management</h3>
+        <ul>
+            <li>Each chain maintains <code>previous_outputs</code> to pass IDs between steps</li>
+            <li>If a required dependency is missing, the step is skipped with an error</li>
+            <li>Chains are independent - one chain's failure doesn't affect others</li>
+        </ul>
+
+        <h3>3. Result Collection</h3>
+        <p>Every API call generates a result record containing:</p>
+        <ul>
+            <li>Request and response JSON bodies</li>
+            <li>HTTP status codes and business status</li>
+            <li>Execution duration in milliseconds</li>
+            <li>Trace IDs for debugging</li>
+            <li>Error details and structured error parsing</li>
+        </ul>
+
+        <h3>4. Output</h3>
+        <p>Results are saved to:</p>
+        <ul>
+            <li><code>outputs/results.csv</code> - CSV format for analysis</li>
+            <li><code>outputs/local.db</code> - SQLite database for querying</li>
+            <li>Console output with real-time progress</li>
+        </ul>
+
+        <h2 id="configuration">Configuration Files</h2>
+        <p>The framework uses CSV files in the <code>/config</code> directory:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Purpose</th>
+                    <th>Required Fields</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>tests.csv</code></td>
+                    <td>Test step definitions</td>
+                    <td><code>chain_id</code>, <code>step_order</code>, <code>call_type</code>, <code>test_id</code></td>
+                </tr>
+                <tr>
+                    <td><code>environments.csv</code></td>
+                    <td>API environments</td>
+                    <td><code>env</code>, <code>endpoint_host</code>, <code>client_id</code>, <code>client_secret</code></td>
+                </tr>
+                <tr>
+                    <td><code>merchants.csv</code></td>
+                    <td>Merchant configurations</td>
+                    <td><code>merchant</code>, <code>env</code>, <code>acquirer_id</code>, <code>merchant_id</code></td>
+                </tr>
+                <tr>
+                    <td><code>cards.csv</code></td>
+                    <td>Test card data</td>
+                    <td><code>card_id</code>, <code>card_number</code>, <code>expiry_date</code>, <code>card_brand</code></td>
+                </tr>
+                <tr>
+                    <td><code>address.csv</code></td>
+                    <td>Address data for AVS</td>
+                    <td><code>address_id</code>, <code>cardholder_address</code>, <code>cardholder_postal_code</code></td>
+                </tr>
+                <tr>
+                    <td><code>networktoken.csv</code></td>
+                    <td>Network tokenization data</td>
+                    <td><code>networktoken_id</code>, <code>wallet_id</code>, <code>network_token_cryptogram</code></td>
+                </tr>
+                <tr>
+                    <td><code>threeddata.csv</code></td>
+                    <td>3D Secure authentication</td>
+                    <td><code>three_d_id</code>, <code>three_d_secure_type</code>, <code>authentication_value</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2 id="threading">Threading Behavior</h2>
+
+        <h3>Sequential Execution (--threads 1)</h3>
+        <ul>
+            <li>Chains execute one after another</li>
+            <li>Predictable execution order</li>
+            <li>Easier debugging</li>
+            <li>Lower resource usage</li>
+        </ul>
+
+        <h3>Parallel Execution (--threads N)</h3>
+        <ul>
+            <li>Multiple chains run simultaneously</li>
+            <li>Faster overall execution</li>
+            <li>Thread-safe result collection</li>
+            <li>Steps within each chain remain sequential</li>
+        </ul>
+
+        <div class="alert alert-info">
+            <strong>Thread Safety:</strong> The framework uses thread-local storage for trace IDs and HTTP status codes, ensuring proper isolation between parallel chains.
+        </div>
+
+        <h2 id="error-handling">Error Handling</h2>
+        <p>The framework handles several types of errors gracefully:</p>
+
+        <ol>
+            <li><strong>Dependency Errors</strong>: Missing payment_id or refund_id - step skipped with clear error message</li>
+            <li><strong>API Errors</strong>: HTTP errors from Worldline API - captured with full error details</li>
+            <li><strong>Configuration Errors</strong>: Missing merchants, cards, or environments - chain fails with descriptive error</li>
+            <li><strong>Network Errors</strong>: Connection issues - retry behavior depends on SDK configuration</li>
+        </ol>
+
+        <h2 id="output-format">Output Format</h2>
+
+        <h3>CSV Results (outputs/results.csv)</h3>
+        <p>Key columns in the results:</p>
+        <ul>
+            <li><code>chain_id</code>, <code>step_order</code>, <code>call_type</code>, <code>test_id</code></li>
+            <li><code>trace_id</code> - Unique identifier for debugging</li>
+            <li><code>payment_id</code>, <code>refund_id</code> - Transaction identifiers</li>
+            <li><code>request_body</code>, <code>response_body</code> - Full JSON payloads</li>
+            <li><code>status</code> - Business status (AUTHORIZED, CAPTURED, etc.)</li>
+            <li><code>http_status</code> - HTTP response code (200, 201, 400, etc.)</li>
+            <li><code>duration_ms</code> - Execution time in milliseconds</li>
+            <li><code>pass</code> - Boolean success indicator</li>
+            <li><code>error</code>, <code>error_title</code>, <code>error_detail</code> - Structured error information</li>
+        </ul>
+
+        <h3>Database Storage</h3>
+        <p>SQLite database at <code>outputs/local.db</code> with table <code>runs</code> containing all result data. Query examples:</p>
+
+        <pre><code>-- Failed transactions
+SELECT * FROM runs WHERE pass = 0;
+
+-- Average response times by call type
+SELECT call_type, AVG(duration_ms) FROM runs GROUP BY call_type;
+
+-- Trace specific transaction
+SELECT * FROM runs WHERE trace_id = 'your-trace-id';</code></pre>
+
+        <h2 id="best-practices">Best Practices</h2>
+        <ol>
+            <li><strong>Start Sequential</strong>: Begin with <code>--threads 1</code> for debugging, then scale up</li>
+            <li><strong>Use Trace IDs</strong>: Include trace IDs in support requests for faster debugging</li>
+            <li><strong>Monitor Results</strong>: Check <code>pass</code> rate and <code>duration_ms</code> for performance insights</li>
+            <li><strong>Environment Separation</strong>: Use different test files for different environments</li>
+            <li><strong>Error Analysis</strong>: Review <code>error_detail</code> field for specific failure reasons</li>
+        </ol>
+
+        <h2 id="troubleshooting">Troubleshooting</h2>
+
+        <h3>Common Issues</h3>
+
+        <div class="alert alert-warning">
+            <strong>"payment_id not set for call_type"</strong><br>
+            <strong>Solution:</strong> Ensure previous <code>create_payment</code> step succeeded<br>
+            <strong>Check:</strong> Previous step's <code>pass</code> field should be <code>True</code>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>"Environment X not defined"</strong><br>
+            <strong>Solution:</strong> Add missing environment to <code>environments.csv</code><br>
+            <strong>Check:</strong> <code>env</code> values in <code>tests.csv</code> match <code>environments.csv</code>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>"Merchant Y not defined"</strong><br>
+            <strong>Solution:</strong> Add merchant configuration to <code>merchants.csv</code><br>
+            <strong>Check:</strong> Merchant exists for the specified environment
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>Import/Module Errors</strong><br>
+            <strong>Solution:</strong> Run from project root: <code>python -m src.main</code><br>
+            <strong>Check:</strong> Virtual environment is activated with all dependencies
+        </div>
+
+        <h3>Performance Tuning</h3>
+        <ul>
+            <li><strong>Threading</strong>: Start with 3-5 threads, monitor resource usage</li>
+            <li><strong>Batch Size</strong>: Split large test files into smaller batches</li>
+            <li><strong>Timeout Settings</strong>: Adjust SDK timeouts in <code>environments.csv</code></li>
+            <li><strong>Database</strong>: Use SQLite for analysis, CSV for data exchange</li>
+        </ul>
+    </div>
+</body>
+</html>
