@@ -7,6 +7,7 @@ import tempfile
 import configparser
 import pandas as pd
 import logging
+from .logging_config import get_main_logger
 from sqlalchemy import create_engine
 
 logger = logging.getLogger(__name__)
@@ -96,18 +97,21 @@ def create_temp_config(env_data):
         raise
 
 def get_db_engine():
-    """Get SQLAlchemy database engine for local SQLite database"""
-    logger.debug("Creating database engine")
+    """Create database engine for results storage"""
+    import os
+    from sqlalchemy import create_engine
     
-    try:
-        db_path = 'sqlite:///outputs/local.db'
-        engine = create_engine(db_path)
-        logger.info(f"Database engine created: {db_path}")
-        return engine
-        
-    except Exception as e:
-        logger.error(f"Failed to create database engine: {e}")
-        raise
+    logger = get_main_logger()
+    
+    # Create outputs directory if it doesn't exist
+    os.makedirs('outputs', exist_ok=True)
+    
+    # Use SQLite for local storage
+    db_path = 'outputs/local.db'
+    engine = create_engine(f'sqlite:///{db_path}')
+    
+    logger.info(f"Database engine created: sqlite:///{db_path}")
+    return engine
 
 def clean_request(request):
     """Clean request object by removing None values and empty dictionaries"""
