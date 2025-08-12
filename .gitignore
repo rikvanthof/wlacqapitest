@@ -54,4 +54,4 @@ htmlcov/
 
 # Build outputs
 dist/
-build/
+build/*.backup
