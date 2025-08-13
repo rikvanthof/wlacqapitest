@@ -198,19 +198,22 @@ class PaymentAssertionEngine:
             return None
     
     def _extract_total_auth_amount(self, response: Any) -> Optional[str]:
-        """Extract amount from response (totalAuthorizationAmount doesn't exist)"""
+        """Extract totalAuthorizedAmount.amount from response"""
         try:
             if hasattr(response, 'to_dictionary'):
                 resp_dict = response.to_dictionary()
                 
-                # Look for amount in the original request amount field since totalAuthorizationAmount doesn't exist
-                # For create_payment, the amount is in the request, not response
-                # This field might not be meaningful for assertions - consider removing
-                return None  # ✅ This field doesn't exist in API responses
-            
+                # Look for totalAuthorizedAmount (with 'd') in the response
+                total_auth = resp_dict.get('totalAuthorizedAmount')
+                if total_auth and isinstance(total_auth, dict):
+                    amount = total_auth.get('amount')
+                    if amount is not None:
+                        return str(amount)
+                
+                return None
             return None
         except Exception as e:
-            self.logger.warning(f"Failed to extract totalAuthorizationAmount: {e}")
+            self.logger.warning(f"Failed to extract totalAuthorizedAmount: {e}")
             return None
 
     

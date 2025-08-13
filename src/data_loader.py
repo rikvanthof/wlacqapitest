@@ -21,6 +21,7 @@ def load_data(tests_file='smoke_tests.csv'):
     print(f"📍 Addresses: {len(config_set.address)}")
     print(f"🔐 Network Tokens: {len(config_set.networktokens)}")
     print(f"🔒 3D Secure: {len(config_set.threeds)}")
+    print(f"🔄 Card-on-file: {len(config_set.cardonfile)}")
     
     # Return in original format for backward compatibility
     return (
@@ -30,5 +31,6 @@ def load_data(tests_file='smoke_tests.csv'):
         config_set.address,
         config_set.networktokens,
         config_set.threeds,
+        config_set.cardonfile,
         config_set.tests
     )

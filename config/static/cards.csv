@@ -1,4 +1,5 @@
 card_id,card_brand,card_bin,card_number,expiry_date,card_sequence_number,card_security_code,card_pin,card_description
+VisaR1,VISA,4176669999,4176669999000104,122031,,012,1234,VISA Test Card R1
 card01,MASTERCARD,54133300,5413330089600010,122031,,123,4315,Mastercard PPC_MCD_01
 card02,MASTERCARD,,,122031,,123,,"Mastercard MCC_351
 "

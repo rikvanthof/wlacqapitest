@@ -73,6 +73,35 @@ def get_transaction_id(response: Any, call_type: str) -> str:
     except Exception:
         return ''
 
+def extract_scheme_transaction_id(response, call_type, previous_outputs):
+    """Extract schemeTransactionId from create_payment responses for COF tracking"""
+    if call_type != 'create_payment':
+        return
+    
+    try:
+        # Check if response has references and schemeTransactionId
+        if hasattr(response, 'references') and response.references:
+            if hasattr(response.references, 'scheme_transaction_id') and response.references.scheme_transaction_id:
+                scheme_id = response.references.scheme_transaction_id
+                previous_outputs['scheme_transaction_id'] = scheme_id
+                print(f"📊 Extracted scheme transaction ID: {scheme_id}")
+                return
+        
+        # Fallback: Check if it's in the response dictionary
+        if hasattr(response, 'to_dictionary'):
+            response_dict = response.to_dictionary()
+            refs = response_dict.get('references', {})
+            if refs.get('schemeTransactionId'):
+                scheme_id = refs['schemeTransactionId']
+                previous_outputs['scheme_transaction_id'] = scheme_id
+                print(f"📊 Extracted scheme transaction ID (fallback): {scheme_id}")
+                return
+        
+        print("ℹ️ No scheme transaction ID found in response")
+        
+    except Exception as e:
+        print(f"⚠️ Error extracting scheme transaction ID: {e}")
+
 def get_response_status(response: Any, call_type: str) -> Optional[str]:
     """Extract response status from API response"""
     try:
@@ -117,6 +146,7 @@ def update_previous_outputs(response: Any, call_type: str, previous_outputs: Dic
             if payment_id:
                 previous_outputs['payment_id'] = payment_id
                 logger.info(f"Updated previous_outputs with payment_id: {payment_id}")
+                extract_scheme_transaction_id(response, call_type, previous_outputs)
         
         elif call_type == 'refund_payment':
             refund_id = get_transaction_id(response, call_type)
@@ -136,3 +166,42 @@ def get_card_description(call_type: str, cards: pd.DataFrame, card_id: Optional[
         return 'N/A'
     except Exception:
         return 'N/A'
+    
+def debug_response_structure(response, test_id):
+    """Debug function to see response structure"""
+    print(f"🔍 DEBUG Response for {test_id}:")
+    print(f"🔍 Response type: {type(response)}")
+    
+    # Check direct attributes
+    if hasattr(response, '__dict__'):
+        attrs = [attr for attr in dir(response) if not attr.startswith('_')]
+        print(f"🔍 Direct attributes: {attrs[:10]}")  # First 10
+    
+    # Check if it has amount-related fields
+    amount_fields = []
+    for attr in ['amount', 'total_amount', 'totalAmount', 'total_authorization_amount', 'totalAuthorizationAmount']:
+        if hasattr(response, attr):
+            value = getattr(response, attr)
+            amount_fields.append(f"{attr}: {value}")
+    
+    if amount_fields:
+        print(f"🔍 Amount fields found: {amount_fields}")
+    else:
+        print("🔍 No amount fields found in direct attributes")
+    
+    # Check dictionary representation
+    if hasattr(response, 'to_dictionary'):
+        try:
+            resp_dict = response.to_dictionary()
+            print(f"🔍 Dictionary keys: {list(resp_dict.keys())}")
+            
+            # Look for amount fields in dictionary
+            for key, value in resp_dict.items():
+                if 'amount' in key.lower():
+                    print(f"🔍 Amount in dict: {key}: {value}")
+                    
+        except Exception as e:
+            print(f"🔍 Error getting dictionary: {e}")
+    
+    print(f"🔍 DEBUG END for {test_id}")
+    print("-" * 40)

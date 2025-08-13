@@ -12,8 +12,8 @@ class CreatePaymentEndpoint(EndpointInterface):
         return create_payment(client, acquirer_id, merchant_id, request)
     
     @staticmethod
-    def build_request(row, cards, address, networktokens, threeds):
-        return build_create_payment_request(row, cards, address, networktokens, threeds)
+    def build_request(row, cards, address, networktokens, threeds, cardonfile=None, previous_outputs=None):
+        return build_create_payment_request(row, cards, address, networktokens, threeds, cardonfile, previous_outputs)
     
     @staticmethod
     def get_dependencies():
