@@ -5,12 +5,9 @@ import json
 import pandas as pd
 from unittest.mock import Mock, patch, MagicMock, PropertyMock
 from src.results_handler import (
-    parse_error_response, get_payment_id, get_refund_id, format_duration,
-    format_http_status, create_success_result, create_error_result,
+    parse_error_response, create_success_result, create_error_result,
     create_dependency_error_result, save_results
-)
-
-class TestParseErrorResponse:
+)class TestParseErrorResponse:
     """Test error response parsing"""
     
     def test_parse_json_error_response(self):
