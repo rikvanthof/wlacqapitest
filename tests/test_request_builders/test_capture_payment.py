@@ -14,17 +14,17 @@ class TestBuildCapturePaymentRequest:
             'amount': 75,
             'currency': 'GBP'
         }
-        
+
         with patch('src.request_builders.capture_payment.generate_random_string', return_value='cap123'):
             request = build_capture_payment_request(row)
-            
+
             # Verify request structure with correct attribute names
             assert hasattr(request, 'operation_id')
-            assert request.operation_id == 'CAP001-cap123'
+            assert request.operation_id == 'CAP001:cap123'  # ✅ Changed - to :
             assert hasattr(request, 'transaction_timestamp')
-            assert hasattr(request, 'amount')  # Changed from 'amount_of_money'
+            assert hasattr(request, 'amount')
             
-            # Verify amount details
+            # Verify amount
             assert request.amount.amount == 75
             assert request.amount.currency_code == 'GBP'
             assert request.amount.number_of_decimals == 2
@@ -97,12 +97,12 @@ class TestBuildCapturePaymentRequest:
             'amount': 100,
             'currency': 'GBP'
         }
-        
+
         with patch('src.request_builders.capture_payment.generate_random_string', return_value='test123'):
             request = build_capture_payment_request(row)
-            
+
             # Should combine test_id with random string
-            assert request.operation_id == 'CAPTURE_TEST_001-test123'
+            assert request.operation_id == 'CAPTURE_TEST_001:test123'  # ✅ Changed - to :
 
     def test_timestamp_generation(self):
         """Test timestamp generation"""

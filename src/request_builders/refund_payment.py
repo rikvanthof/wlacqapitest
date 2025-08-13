@@ -18,8 +18,8 @@ def build_refund_payment_request(row):
         references.dynamic_descriptor = row['dynamic_descriptor']
     
     # Set required fields
-    request.operation_id = row['test_id'] + '-' + generate_random_string(40-(len(row['test_id'])+1))
-    references.merchant_reference = row['test_id'] + '-' + generate_random_string(50-(len(row['test_id'])+1))
+    request.operation_id = row['test_id'] + ':' + generate_random_string(40-(len(row['test_id'])+1))
+    references.merchant_reference = row['test_id'] + ':' + generate_random_string(50-(len(row['test_id'])+1))
     request.transaction_timestamp = pd.Timestamp.now(tz=datetime.timezone.utc).replace(microsecond=0).to_pydatetime()
     
     # Assign references to request

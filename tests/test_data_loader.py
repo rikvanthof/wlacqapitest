@@ -22,15 +22,16 @@ class TestLoadData:
         mock_config_set.address = pd.DataFrame({'address_id': ['addr1']}).set_index('address_id')
         mock_config_set.networktokens = pd.DataFrame({'token_id': ['token1']}).set_index('token_id')
         mock_config_set.threeds = pd.DataFrame({'threeds_id': ['3ds1']}).set_index('threeds_id')
+        mock_config_set.cardonfile = pd.DataFrame({'cof_id': ['cof1']}).set_index('cof_id')  # ✅ Added
         mock_config_set.tests = pd.DataFrame({'test_id': ['TEST001'], 'chain_id': ['chain1']})
         
         mock_load_configs.return_value = mock_config_set
         
         result = load_data('test_file.csv')
         
-        # Should return 7 items
-        assert len(result) == 7
-        environments, cards, merchants, address, networktokens, threeds, tests = result
+        # Should return 8 items now (including cardonfile)
+        assert len(result) == 8
+        environments, cards, merchants, address, networktokens, threeds, cardonfile, tests = result
         
         # Verify each item
         assert len(environments) == 1
@@ -39,6 +40,7 @@ class TestLoadData:
         assert len(address) == 1
         assert len(networktokens) == 1
         assert len(threeds) == 1
+        assert len(cardonfile) == 1  # ✅ Added verification
         assert len(tests) == 1
 
     @patch('src.config.config_manager.ConfigurationManager.load_all_configs')
@@ -55,12 +57,13 @@ class TestLoadData:
         }).set_index('address_id')
         mock_config_set.networktokens = pd.DataFrame().set_index(pd.Index([], name='token_id'))
         mock_config_set.threeds = pd.DataFrame().set_index(pd.Index([], name='threeds_id'))
+        mock_config_set.cardonfile = pd.DataFrame().set_index(pd.Index([], name='cof_id'))  # ✅ Added
         # Fix: Add chain_id column to prevent KeyError
         mock_config_set.tests = pd.DataFrame(columns=['chain_id', 'test_id'])
         
         mock_load_configs.return_value = mock_config_set
         
-        _, _, _, address, _, _, _ = load_data('test_file.csv')
+        _, _, _, address, _, _, _, _ = load_data('test_file.csv')  # ✅ Updated unpacking
         
         # Verify address data types
         assert len(address) == 1
@@ -79,14 +82,15 @@ class TestLoadData:
             'wallet_id': ['103']
         }).set_index('networktoken_id')
         mock_config_set.threeds = pd.DataFrame().set_index(pd.Index([], name='threeds_id'))
+        mock_config_set.cardonfile = pd.DataFrame().set_index(pd.Index([], name='cof_id'))  # ✅ Added
         # Fix: Add chain_id column to prevent KeyError
         mock_config_set.tests = pd.DataFrame(columns=['chain_id', 'test_id'])
         
         mock_load_configs.return_value = mock_config_set
         
-        environments, cards, merchants, address, networktokens, threeds, tests = load_data('test_file.csv')
+        environments, cards, merchants, address, networktokens, threeds, cardonfile, tests = load_data('test_file.csv')  # ✅ Updated unpacking
         
-        # Should return 7 items including networktokens
+        # Should return 8 items including networktokens and cardonfile
         assert len(networktokens) == 1
         assert 'token1' in networktokens.index
 
@@ -108,6 +112,7 @@ class TestLoadData:
         mock_config_set.address = pd.DataFrame().set_index(pd.Index([], name='address_id'))
         mock_config_set.networktokens = pd.DataFrame().set_index(pd.Index([], name='networktoken_id'))
         mock_config_set.threeds = pd.DataFrame().set_index(pd.Index([], name='threeds_id'))
+        mock_config_set.cardonfile = pd.DataFrame().set_index(pd.Index([], name='cof_id'))  # ✅ Added
         mock_config_set.tests = pd.DataFrame({
             'test_id': ['TEST001', 'TEST002', 'TEST003', 'TEST004'],
             'chain_id': ['chain1', 'chain1', 'chain2', 'chain2'],
@@ -116,7 +121,31 @@ class TestLoadData:
         
         mock_load_configs.return_value = mock_config_set
         
-        _, _, _, _, _, _, tests = load_data('test_file.csv')
+        _, _, _, _, _, _, _, tests = load_data('test_file.csv')  # ✅ Updated unpacking
         
         # Verify data structure (tests should be accessible)
         assert len(tests) == 4
+
+    @patch('src.config.config_manager.ConfigurationManager.load_all_configs')
+    def test_load_data_with_cardonfile(self, mock_load_configs):
+        """Test loading with card-on-file configurations"""
+        mock_config_set = Mock()
+        mock_config_set.environments = pd.DataFrame().set_index(pd.Index([], name='env'))
+        mock_config_set.cards = pd.DataFrame().set_index(pd.Index([], name='card_id'))
+        mock_config_set.merchants = pd.DataFrame().set_index(pd.MultiIndex.from_tuples([], names=['env', 'merchant']))
+        mock_config_set.address = pd.DataFrame().set_index(pd.Index([], name='address_id'))
+        mock_config_set.networktokens = pd.DataFrame().set_index(pd.Index([], name='networktoken_id'))
+        mock_config_set.threeds = pd.DataFrame().set_index(pd.Index([], name='threeds_id'))
+        mock_config_set.cardonfile = pd.DataFrame({
+            'card_on_file_id': ['FIRSTUCOF-CIT'],
+            'is_initial_transaction': [True]
+        }).set_index('card_on_file_id')
+        mock_config_set.tests = pd.DataFrame(columns=['chain_id', 'test_id'])
+        
+        mock_load_configs.return_value = mock_config_set
+        
+        environments, cards, merchants, address, networktokens, threeds, cardonfile, tests = load_data('test_file.csv')
+        
+        # Verify card-on-file data
+        assert len(cardonfile) == 1
+        assert 'FIRSTUCOF-CIT' in cardonfile.index

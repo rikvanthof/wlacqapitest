@@ -11,7 +11,7 @@ def build_increment_payment_request(row):
     request = ApiIncrementRequest()
     
     # Set required fields
-    request.operation_id = row['test_id'] + '-' + generate_random_string(40-(len(row['test_id'])+1))
+    request.operation_id = row['test_id'] + ':' + generate_random_string(40-(len(row['test_id'])+1))
     request.transaction_timestamp = pd.Timestamp.now(tz=datetime.timezone.utc).replace(microsecond=0).to_pydatetime()
     
     # Set amount - increment should always have an amount
