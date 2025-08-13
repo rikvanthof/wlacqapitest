@@ -91,7 +91,11 @@ class PaymentAssertionEngine:
         expected_code = row.get('expected_response_code')
         
         if pd.notna(expected_code) and expected_code != '':
-            expected_code = str(expected_code).strip()  # ✅ Keep as string, no float conversion
+            # Clean expected value to remove .0 from whole numbers
+            expected_code = str(expected_code).strip()
+            if expected_code.endswith('.0'):
+                expected_code = expected_code[:-2]
+            
             actual_code = self._extract_response_code(response)
             
             if actual_code is not None:
@@ -103,25 +107,31 @@ class PaymentAssertionEngine:
                                 actual_code_str, expected_code)
             else:
                 result.add_fail(f"responseCode: expected '{expected_code}', but not found in response", 
-                            None, expected_code)
+                            'NULL', expected_code)
     
     def _assert_total_auth_amount(self, row: pd.Series, response: Any, result: PaymentAssertionResult):
         """Assert totalAuthorizationAmount.amount"""
         expected_amount = row.get('expected_total_auth_amount')
         
         if pd.notna(expected_amount) and expected_amount != '':
-            expected_amount = float(expected_amount)
+            # Convert to int string if it's a whole number
+            expected_amount_float = float(expected_amount)
+            if expected_amount_float.is_integer():
+                expected_amount_str = str(int(expected_amount_float))
+            else:
+                expected_amount_str = str(expected_amount_float)
+            
             actual_amount = self._extract_total_auth_amount(response)
             
             if actual_amount is not None:
-                if abs(actual_amount - expected_amount) < 0.01:  # Allow for minor floating point differences
-                    result.add_pass(f"totalAuthorizationAmount: {actual_amount}", actual_amount, expected_amount)
+                if abs(float(actual_amount) - expected_amount_float) < 0.01:
+                    result.add_pass(f"totalAuthorizationAmount: {actual_amount}", actual_amount, expected_amount_str)
                 else:
-                    result.add_fail(f"totalAuthorizationAmount: expected {expected_amount}, got {actual_amount}", 
-                                   actual_amount, expected_amount)
+                    result.add_fail(f"totalAuthorizationAmount: expected {expected_amount_str}, got {actual_amount}", 
+                                actual_amount, expected_amount_str)
             else:
-                result.add_fail(f"totalAuthorizationAmount: expected {expected_amount}, but not found in response", 
-                               None, expected_amount)
+                result.add_fail(f"totalAuthorizationAmount: expected {expected_amount_str}, but not found in response", 
+                            'NULL', expected_amount_str)
     
     def _assert_card_security_result(self, row: pd.Series, response: Any, result: PaymentAssertionResult):
         """Assert cardPaymentData.ecommerceData.cardSecurityResult"""
@@ -138,8 +148,7 @@ class PaymentAssertionEngine:
                     result.add_fail(f"cardSecurityResult: expected {expected_result}, got {actual_result}", 
                                    actual_result, expected_result)
             else:
-                result.add_fail(f"cardSecurityResult: expected {expected_result}, but not found in response", 
-                               None, expected_result)
+                result.add_fail(f"cardSecurityResult: expected {expected_result}, but not found in response", 'NULL', expected_result)
     
     def _assert_avs_result(self, row: pd.Series, response: Any, result: PaymentAssertionResult):
         """Assert cardPaymentData.ecommerceData.addressVerificationResult"""
@@ -156,8 +165,7 @@ class PaymentAssertionEngine:
                     result.add_fail(f"addressVerificationResult: expected {expected_result}, got {actual_result}", 
                                    actual_result, expected_result)
             else:
-                result.add_fail(f"addressVerificationResult: expected {expected_result}, but not found in response", 
-                               None, expected_result)
+                result.add_fail(f"addressVerificationResult: expected {expected_result}, but not found in response", 'NULL', expected_result)
     
     def _assert_merchant_advice_code(self, row: pd.Series, response: Any, result: PaymentAssertionResult):
         """Assert additionalResponseData.merchantAdviceCode"""
@@ -174,8 +182,7 @@ class PaymentAssertionEngine:
                     result.add_fail(f"merchantAdviceCode: expected {expected_code}, got {actual_code}", 
                                    actual_code, expected_code)
             else:
-                result.add_fail(f"merchantAdviceCode: expected {expected_code}, but not found in response", 
-                               None, expected_code)
+                result.add_fail(f"merchantAdviceCode: expected {expected_code}, but not found in response", 'NULL', expected_code)
     
     # Extraction methods for the 6 specific properties
     
