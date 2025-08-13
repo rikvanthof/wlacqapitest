@@ -197,7 +197,7 @@ def build_api_call_args(call_type, client, merchant_info, previous_outputs, requ
     logger.debug(f"Built API args for {call_type}: {len(base_args)} arguments")
     return base_args
 
-def process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, previous_outputs, chain_id, step_num, total_steps, verbose=False):
+def process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, cardonfile, previous_outputs, chain_id, step_num, total_steps, verbose=False):
     """Process a single test step using registry"""
     logger = get_main_logger()
     test_id = row['test_id']
@@ -228,7 +228,7 @@ def process_test_step(row, call_type, client, merchant_info, cards, address, net
     request = None
     try:
         if call_type == 'create_payment':
-            request = endpoint.build_request(row, cards, address, networktokens, threeds)
+            request = endpoint.build_request(row, cards, address, networktokens, threeds, cardonfile, previous_outputs)
         else:
             request = endpoint.build_request(row)
         logger.debug(f"[{chain_id}] Request built successfully")
@@ -274,7 +274,7 @@ def process_test_step(row, call_type, client, merchant_info, cards, address, net
             merchant_info['merchant_description'], previous_outputs, request, card_description
         )
 
-def run_test_chain(chain_id, group, environments, merchants, cards, address, networktokens, threeds, verbose=False):
+def run_test_chain(chain_id, group, environments, merchants, cards, address, networktokens, threeds, cardonfile, verbose=False):
     """Run all steps in a test chain (sequential within chain)"""
     logger = get_main_logger()
     
@@ -319,14 +319,14 @@ def run_test_chain(chain_id, group, environments, merchants, cards, address, net
                 continue
             
             # Process the test step
-            result = process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, previous_outputs, chain_id, step_num, total_steps, verbose)
+            result = process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, cardonfile, previous_outputs, chain_id, step_num, total_steps, verbose)
             results.append(result)
     
     logger.info(f"[{chain_id}] Completed chain execution ({len(results)} steps)")
     print(f"[{chain_id}] Completed chain execution ({len(results)} steps)")
     return results
 
-def run_sequential_chains(environments, merchants, cards, address, networktokens, threeds, tests, verbose=False):
+def run_sequential_chains(environments, merchants, cards, address, networktokens, threeds, cardonfile, tests, verbose=False):
     """Run test chains sequentially (original behavior)"""
     logger = get_main_logger()
     
@@ -336,7 +336,7 @@ def run_sequential_chains(environments, merchants, cards, address, networktokens
     
     for chain_id, group in tests.groupby('chain_id'):
         try:
-            chain_results = run_test_chain(chain_id, group, environments, merchants, cards, address, networktokens, threeds, verbose)
+            chain_results = run_test_chain(chain_id, group, environments, merchants, cards, address, networktokens, threeds, cardonfile, verbose)
             all_results.extend(chain_results)
         except Exception as e:
             logger.error(f"❌ Chain {chain_id} failed: {e}", exc_info=True)
@@ -345,7 +345,7 @@ def run_sequential_chains(environments, merchants, cards, address, networktokens
     
     return all_results
 
-def run_parallel_chains(environments, merchants, cards, address, networktokens, threeds, tests, max_workers=3, verbose=False):
+def run_parallel_chains(environments, merchants, cards, address, networktokens, threeds, cardonfile, tests, max_workers=3, verbose=False):
     """Run test chains in parallel with controlled concurrency"""
     logger = get_main_logger()
     
@@ -356,7 +356,7 @@ def run_parallel_chains(environments, merchants, cards, address, networktokens, 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit each chain as a separate task
         future_to_chain = {
-            executor.submit(run_test_chain, chain_id, group, environments, merchants, cards, address, networktokens, threeds, verbose): chain_id
+            executor.submit(run_test_chain, chain_id, group, environments, merchants, cards, address, networktokens, threeds, cardonfile, verbose): chain_id
             for chain_id, group in tests.groupby('chain_id')
         }
         
@@ -454,9 +454,9 @@ def main():
         address = config_set.address
         networktokens = config_set.networktokens
         threeds = config_set.threeds
+        cardonfile = config_set.cardonfile
         tests = config_set.tests
-        
-        
+
         # Execute test chains
         start_time = time.time()
         enable_threading = args.threads > 1
@@ -466,10 +466,10 @@ def main():
         
         if enable_threading:
             logger.info(f"Running {total_chains} chains in parallel with {args.threads} threads")
-            all_results = run_parallel_chains(environments, merchants, cards, address, networktokens, threeds, tests, args.threads, args.verbose)
+            all_results = run_parallel_chains(environments, merchants, cards, address, networktokens, threeds, cardonfile, tests, args.threads, args.verbose)
         else:
             logger.info(f"Running {total_chains} chains sequentially")
-            all_results = run_sequential_chains(environments, merchants, cards, address, networktokens, threeds, tests, args.verbose)
+            all_results = run_sequential_chains(environments, merchants, cards, address, networktokens, threeds, cardonfile, tests, args.verbose)
         
         execution_time = time.time() - start_time
         

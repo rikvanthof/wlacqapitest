@@ -30,6 +30,7 @@ class ConfigSet:
     address: pd.DataFrame
     networktokens: pd.DataFrame
     threeds: pd.DataFrame
+    cardonfile: pd.DataFrame  # ← Added cardonfile support
     tests: pd.DataFrame
     credentials: pd.DataFrame
 
@@ -52,6 +53,7 @@ class ConfigurationManager:
             address = self._load_address()
             networktokens = self._load_networktokens()
             threeds = self._load_threeds()
+            cardonfile = self._load_cardonfile()  # ← Added cardonfile loading
             
             # Load credentials (private)
             credentials = self._load_credentials()
@@ -65,7 +67,7 @@ class ConfigurationManager:
             # Validate configuration consistency
             self._validate_configuration_consistency(
                 environments, cards, merchants, address, 
-                networktokens, threeds, tests
+                networktokens, threeds, cardonfile, tests  # ← Added cardonfile to validation
             )
             
             config_set = ConfigSet(
@@ -75,6 +77,7 @@ class ConfigurationManager:
                 address=address,
                 networktokens=networktokens,
                 threeds=threeds,
+                cardonfile=cardonfile,  # ← Added cardonfile to ConfigSet
                 tests=tests,
                 credentials=credentials
             )
@@ -197,6 +200,33 @@ class ConfigurationManager:
             self.logger.debug(f"3D Secure types: {dict(type_counts)}")
         
         return threeds
+    
+    def _load_cardonfile(self) -> pd.DataFrame:
+        """Load card-on-file configuration"""
+        file_path = f"{self.paths.static_dir}/cardonfile.csv"
+        self.logger.debug(f"Loading card-on-file data from: {file_path}")
+        
+        cardonfile = pd.read_csv(file_path, dtype={
+            'is_initial_transaction': str,  # ← Updated column name
+            'transaction_type': str,        # ← Updated column name  
+            'card_on_file_initiator': str,  # ← Updated column name
+            'future_use': str               # ← Updated column name
+        }).set_index('card_on_file_id')
+        
+        self.logger.info(f"🔄 Card-on-file data loaded: {len(cardonfile)} configurations")
+        self.logger.debug(f"Available card-on-file IDs: {list(cardonfile.index)}")
+        
+        # Log transaction type distribution
+        if 'transaction_type' in cardonfile.columns:
+            type_counts = cardonfile['transaction_type'].value_counts()
+            self.logger.debug(f"Card-on-file transaction types: {dict(type_counts)}")
+        
+        # Log initial vs subsequent transactions
+        if 'is_initial_transaction' in cardonfile.columns:
+            initial_counts = cardonfile['is_initial_transaction'].value_counts()
+            self.logger.debug(f"Initial transaction distribution: {dict(initial_counts)}")
+        
+        return cardonfile
     
     def _load_credentials(self) -> pd.DataFrame:
         """Load credentials separately"""
@@ -331,7 +361,7 @@ class ConfigurationManager:
             self.logger.info("ℹ️ No tags found in test data")
     
     def _validate_configuration_consistency(self, environments, cards, merchants, 
-                                          address, networktokens, threeds, tests):
+                                          address, networktokens, threeds, cardonfile, tests):
         """Validate data relationships (keeping existing validation logic)"""
         self.logger.debug("Validating data relationships...")
         
@@ -398,6 +428,16 @@ class ConfigurationManager:
                 self.logger.warning(f"Tests reference missing 3D Secure data: {missing_threeds}")
             else:
                 self.logger.debug("All test 3D Secure references are valid")
+        
+        # ← NEW: Check for missing card-on-file references
+        if 'card_on_file_data' in tests.columns:
+            test_cardonfiles = set(tests['card_on_file_data'].dropna().unique())
+            available_cardonfiles = set(cardonfile.index)
+            missing_cardonfiles = test_cardonfiles - available_cardonfiles
+            if missing_cardonfiles:
+                self.logger.warning(f"Tests reference missing card-on-file data: {missing_cardonfiles}")
+            else:
+                self.logger.debug("All test card-on-file references are valid")
     
     def list_available_test_suites(self) -> List[str]:
         """List all available test suite files"""

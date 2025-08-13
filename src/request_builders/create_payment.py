@@ -11,9 +11,10 @@ from ..utils import generate_random_string, clean_request
 from ..avs import apply_avs_data
 from ..network_token import apply_network_token_data
 from ..threed_secure import apply_threed_secure_data
+from ..cardonfile import apply_cardonfile_data  # ← NEW IMPORT
 
-def build_create_payment_request(row, cards, address=None, networktokens=None, threeds=None):
-    """Build ApiPaymentRequest for create_payment calls with optional AVS, Network Token, and 3D Secure data"""
+def build_create_payment_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, previous_outputs=None):
+    """Build ApiPaymentRequest for create_payment calls with full feature support"""
     card_row = cards.loc[row['card_id']]
     request = ApiPaymentRequest()
     
@@ -56,6 +57,10 @@ def build_create_payment_request(row, cards, address=None, networktokens=None, t
     if pd.notna(row.get('threed_secure_data')) and threeds is not None:
         apply_threed_secure_data(request, row, threeds)
     
+    # Add Card-on-File data if specified
+    if pd.notna(row.get('card_on_file_data')) and cardonfile is not None:
+        apply_cardonfile_data(request, row, cardonfile, previous_outputs)
+    
     # Create References object first
     references = PaymentReferences()
     
@@ -73,8 +78,8 @@ def build_create_payment_request(row, cards, address=None, networktokens=None, t
     request.amount = amount_data
     
     # Set operation ID and timestamp
-    request.operation_id = row['test_id'] + '-' + generate_random_string(40-(len(row['test_id'])+1))
-    references.merchant_reference = row['test_id'] + '-' + generate_random_string(50-(len(row['test_id'])+1))
+    request.operation_id = row['test_id'] + ':' + generate_random_string(40-(len(row['test_id'])+1))
+    references.merchant_reference = row['test_id'] + ':' + generate_random_string(50-(len(row['test_id'])+1))
     request.transaction_timestamp = pd.Timestamp.now(tz=datetime.timezone.utc).replace(microsecond=0).to_pydatetime()
     
     # Assign references to request
