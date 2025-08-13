@@ -10,7 +10,6 @@ from .core.endpoint_registry import EndpointRegistry
 
 # Import our modular components
 from .data_loader import load_data
-from .core.endpoint_registry import EndpointRegistry
 from .utils import create_temp_config
 from .api_calls import create_payment, increment_auth, capture, refund, get_payment, get_refund
 from .results_handler import create_success_result, create_error_result, create_dependency_error_result, save_results
