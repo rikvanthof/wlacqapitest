@@ -99,7 +99,6 @@ def create_temp_config(env_data):
 def get_db_engine():
     """Create database engine for results storage"""
     import os
-    from sqlalchemy import create_engine
     
     logger = get_main_logger()
     

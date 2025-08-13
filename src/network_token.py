@@ -1,9 +1,8 @@
-"""Network Token data handling with comprehensive logging"""
+"""Network Token functionality for payment requests"""
 
 import pandas as pd
 import logging
 from worldline.acquiring.sdk.v1.domain.network_token_data import NetworkTokenData
-#from worldline.acquiring.sdk.v1.domain.card_payment_data import CardPaymentData
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +47,16 @@ def apply_network_token_data(request, row, networktokens):
         
         logger.info(f"Network token applied: {network_token_id}, wallet_id={token_row['wallet_id']}")
         
-        # DEBUG: Verify it was actually assigned
-        logger.debug(f"NetworkTokenData object: cryptogram={getattr(network_token_data, 'cryptogram', 'NOT_SET')[:20] if hasattr(network_token_data, 'cryptogram') else 'NOT_SET'}..., eci={getattr(network_token_data, 'eci', 'NOT_SET')}")
-        logger.debug(f"CardPaymentData wallet_id: {getattr(request.card_payment_data, 'wallet_id', 'NOT_SET')}")
-            
+        # DEBUG: Verify it was actually assigned - FIXED LOGIC
+        cryptogram_value = getattr(network_token_data, 'cryptogram', None)
+        if cryptogram_value is not None:
+            cryptogram_display = cryptogram_value[:20] + "..." if len(cryptogram_value) > 20 else cryptogram_value
+        else:
+            cryptogram_display = 'NOT_SET'
+        
+        eci_value = getattr(network_token_data, 'eci', 'NOT_SET')
+        logger.debug(f"NetworkTokenData object: cryptogram={cryptogram_display}, eci={eci_value}")
+        
+        logger.debug(f"wallet_id on card_payment_data: {getattr(request.card_payment_data, 'wallet_id', 'NOT_SET')}")
     else:
-        logger.error("Cannot apply network token data: card_payment_data not found on request")
-        raise ValueError("Cannot apply network token data: card_payment_data not found on request")
+        logger.error("card_payment_data is None, cannot set network token data")
