@@ -1,522 +1,557 @@
-# Architecture Guide - Payment API Test Framework
+# Architecture Guide
+
+## Overview
+
+The Payment API Testing Framework employs a modular, plugin-based architecture designed for extensibility, maintainability, and robust testing of complex payment scenarios. The framework supports advanced payment features, chain-level parallelism, graceful degradation, and comprehensive configuration management through CSV files optimized for Excel editing.
 
 ## Table of Contents
-- [Executive Summary](#executive-summary)
-- [Architectural Overview](#architectural-overview)
-- [Core Architectural Principles](#core-architectural-principles)
-- [System Components](#system-components)
-- [Integration Architecture](#integration-architecture)
-- [Data Flow Architecture](#data-flow-architecture)
-- [Cross-Cutting Concerns](#cross-cutting-concerns)
-- [Design Patterns](#design-patterns)
-- [Scalability & Extensibility](#scalability--extensibility)
-- [Quality Attributes](#quality-attributes)
-- [Technology Stack](#technology-stack)
-- [Decision Records](#decision-records)
 
-## Executive Summary
+- [Architectural Principles](#architectural-principles)
+- [System Architecture](#system-architecture)
+- [Core Components](#core-components)
+- [Plugin Architecture](#plugin-architecture)
+- [Configuration Management](#configuration-management)
+- [Execution Model](#execution-model)
+- [Data Flow](#data-flow)
+- [Error Handling Strategy](#error-handling-strategy)
+- [Extensibility Design](#extensibility-design)
+- [Performance Considerations](#performance-considerations)
 
-The Payment API Test Framework is a Python-based testing platform designed for comprehensive validation of Worldline Acquiring payment APIs. The architecture emphasizes **modularity**, **extensibility**, and **maintainability** through well-defined component boundaries and consistent design patterns.
+## Architectural Principles
 
-### Key Architectural Achievements
-- **Plugin Architecture**: Dynamic endpoint registration enables seamless addition of new payment methods
-- **Chain-Based Workflow Engine**: Supports complex, stateful payment scenarios across multiple API calls
-- **Centralized Request Construction**: Request Builder pattern ensures consistent API request formation
-- **Cross-Cutting DCC Integration**: Dynamic Currency Conversion handled transparently across all payment operations
-- **Configuration-Driven Testing**: Externalized test definitions enable non-technical test case management
+### 1. **Modularity and Separation of Concerns**
+- **Endpoints**: Handle API-specific logic and registration
+- **Request Builders**: Construct API requests with feature composition
+- **Feature Modules**: Apply advanced payment capabilities independently
+- **Configuration**: Manage test data and scenarios externally
+- **Core Framework**: Provide execution, registry, and utility services
 
-## Architectural Overview
+### 2. **Plugin-Based Extensibility**
+- Endpoints register automatically via decorators
+- New endpoints can be added without modifying core framework
+- Feature composition allows mixing and matching capabilities
+- Interface enforcement ensures consistency across plugins
 
-### System Context
-```mermaid
-graph TB
-    TF[Test Framework] --> WA[Worldline Acquiring API]
-    TF --> AUTH[Authentication Service]
-    TF --> DCC[DCC Rate Service]
-    
-    TC[Test Configurations] --> TF
-    CR[Credentials] --> TF
-    TF --> TR[Test Results]
-    TF --> LOGS[Execution Logs]
+### 3. **Graceful Degradation**
+- Missing configurations don't halt execution
+- Invalid test definitions are skipped with clear error messages
+- Chain failures don't affect other chains
+- Framework generates APIs that may not make business sense (by design)
+
+### 4. **Configuration-Driven Testing**
+- Test scenarios defined in CSV files for Excel compatibility
+- Advanced payment features configured externally
+- Environment and credential management separated
+- Future migration to database/GUI planned
+
+### 5. **Chain-Level Parallelism**
+- Multiple test chains execute simultaneously
+- Steps within each chain remain sequential
+- Thread-safe result collection and dependency management
+- Scalable performance with configurable thread counts
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Framework Entry Point                       │
+│                        (src/main.py)                           │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Plugin Discovery & Registration                │
+│                (import src.endpoints → decorators)             │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Configuration Loading                        │
+│              (ConfigurationManager → CSV files)                │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Chain Execution Engine                       │
+│                 (ThreadPoolExecutor → Chains)                  │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│    Step Execution (Sequential within Chain)                     │
+│  Endpoint → Request Builder → Feature Application → API Call    │
+└─────────────────┬───────────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Result Collection                            │
+│              (Assertions → Database → CSV Export)              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### High-Level Architecture
-```mermaid
-graph TB
-    subgraph "Presentation Layer"
-        CLI[Command Line Interface]
-        DASH[Dashboard/Reporting]
-    end
-    
-    subgraph "Application Layer"
-        TE[Test Execution Engine]
-        CM[Chain Manager]
-        REG[Endpoint Registry]
-    end
-    
-    subgraph "Domain Layer"
-        EP[Endpoints]
-        RB[Request Builders]
-        DM[DCC Manager]
-        VA[Validation & Assertions]
-    end
-    
-    subgraph "Infrastructure Layer"
-        API[API Communication]
-        CFG[Configuration Management]
-        LOG[Logging & Monitoring]
-        PERSIST[Data Persistence]
-    end
-    
-    CLI --> TE
-    DASH --> TE
-    TE --> CM
-    TE --> REG
-    CM --> EP
-    REG --> EP
-    EP --> RB
-    EP --> DM
-    EP --> VA
-    EP --> API
-    RB --> API
-    DM --> API
-    TE --> CFG
-    TE --> LOG
-    TE --> PERSIST
-```
+## Core Components
 
-## Core Architectural Principles
+### 1. **Endpoint Registry (src/core/endpoint_registry.py)**
 
-### 1. Separation of Concerns
-**Principle**: Each component has a single, well-defined responsibility.
+**Purpose**: Central plugin management and endpoint discovery
 
-**Implementation**:
-- **Endpoints**: Handle API communication and orchestration
-- **Request Builders**: Construct and validate API requests
-- **Managers**: Handle cross-cutting concerns (DCC, chains, configuration)
-- **Utils**: Provide shared, stateless functionality
+**Key Features**:
+- Decorator-based registration (`@register_endpoint`)
+- Interface enforcement via `EndpointInterface` ABC
+- Automatic endpoint discovery through explicit imports
+- DCC capability detection and validation
+- Thread-safe endpoint access
 
-**Benefits**: High cohesion, low coupling, improved testability
-
-### 2. Plugin Architecture
-**Principle**: New functionality can be added without modifying existing code.
-
-**Implementation**:
+**Registration Mechanism**:
 ```python
-@register_endpoint('new_payment_type')
-class NewPaymentEndpoint(EndpointInterface):
-    # Implementation automatically discovered and integrated
+@register_endpoint('create_payment')
+class CreatePaymentEndpoint(EndpointInterface):
+    # Implementation...
 ```
 
-**Benefits**: Zero-impact extension, runtime discovery, simplified deployment
+**Discovery Process**:
+1. `main.py` imports `src.endpoints`
+2. `src.endpoints.__init__.py` imports all endpoint modules
+3. Import triggers `@register_endpoint` decorators
+4. Endpoints register with `EndpointRegistry`
+5. Registry validates interface compliance
 
-### 3. Configuration Over Code
-**Principle**: Behavior is controlled through external configuration rather than code changes.
+### 2. **Configuration Manager (src/config/config_manager.py)**
 
-**Implementation**:
-- Test scenarios defined in CSV files
-- Environment configurations externalized
-- Endpoint behavior controlled via metadata
+**Purpose**: Centralized configuration loading and management
 
-**Benefits**: Non-technical test management, environment-specific behavior, reduced deployment risk
+**Key Features**:
+- CSV file loading with pandas DataFrame conversion
+- Index setting for efficient lookups
+- Optional configuration file handling
+- Validation and error reporting
+- Future database migration preparation
 
-### 4. Immutable Request Construction
-**Principle**: Request objects are built once and remain unchanged through the pipeline.
-
-**Implementation**:
-- Request Builders create complete, valid objects
-- No modification after construction
-- Validation at construction time
-
-**Benefits**: Predictable behavior, easier debugging, thread safety
-
-### 5. Fail-Fast Validation
-**Principle**: Invalid configurations and states are detected as early as possible.
-
-**Implementation**:
-- Configuration validation at startup
-- Request validation at construction
-- Dependency validation before execution
-
-**Benefits**: Faster feedback loops, easier troubleshooting, reduced test execution time
-
-## System Components
-
-### Endpoint Registry
-**Purpose**: Central discovery and management of payment endpoints
-**Pattern**: Registry + Factory
-**Responsibilities**:
-- Dynamic endpoint discovery
-- Capability metadata management
-- Endpoint lifecycle management
-
-```python
-class EndpointRegistry:
-    @staticmethod
-    def get_endpoint(endpoint_type: str) -> EndpointInterface
-    
-    @staticmethod 
-    def endpoint_supports_dcc(endpoint_type: str) -> bool
-    
-    @staticmethod
-    def get_endpoint_dependencies(endpoint_type: str) -> List[str]
-```
-
-### Request Builder Subsystem
-**Purpose**: Centralized API request construction
-**Pattern**: Builder + Strategy
-**Responsibilities**:
-- Request object construction
-- Feature integration (DCC, 3DS, AVS, etc.)
-- Request validation and cleaning
-
-**Key Design Decision**: Request builders are pure functions that take data and context, return complete request objects.
-
-### DCC Management System
-**Purpose**: Handle Dynamic Currency Conversion across payment chains
-**Pattern**: Context + Manager
-**Responsibilities**:
-- DCC rate inquiry orchestration
-- Conversion context management across chains
-- Currency calculation and validation
-
-```python
-class DCCManager:
-    def get_chain_context(chain_id: str) -> DCCContext
-    def update_context_from_dcc_response(chain_id: str, response: Any)
-    def should_perform_dcc_inquiry(row: pd.Series) -> bool
-```
-
-### Chain Execution Engine
-**Purpose**: Execute sequences of related API calls with shared state
-**Pattern**: Pipeline + State Machine
-**Responsibilities**:
-- Chain dependency management
-- State propagation between steps
-- Error handling and recovery
-- Result aggregation
-
-### Configuration Management
-**Purpose**: Centralized configuration loading and validation
-**Pattern**: Repository + Factory
-**Structure**:
+**Configuration Architecture**:
 ```
 config/
-├── static/          # Cards, merchants, environments
-├── credentials/     # API secrets (gitignored)
-└── test_suites/     # Test definitions
+├── credentials/secrets.csv     # API credentials (gitignored)
+├── static/environments.csv    # API endpoints
+├── static/merchants.csv       # Merchant configurations
+├── static/cards.csv           # Test card data
+├── static/cardonfile.csv      # Card-on-File scenarios
+├── static/threeddata.csv      # 3DS & SCA exemptions
+├── static/merchantdata.csv    # Merchant information
+├── static/networktoken.csv    # Network tokenization
+└── static/address.csv         # Address verification
 ```
 
-## Integration Architecture
+### 3. **Request Builders (src/request_builders/)**
 
-### External API Integration
-**Pattern**: Adapter + Circuit Breaker
-**Components**:
-- **Worldline Acquiring SDK**: Primary payment API
-- **Authentication Service**: OAuth2 token management
-- **DCC Rate Service**: Currency conversion rates
+**Purpose**: Compose API requests with feature integration
 
-**Key Decisions**:
-- SDK abstraction prevents vendor lock-in
-- Centralized authentication with token caching
-- Graceful degradation when DCC unavailable
+**Key Features**:
+- Builder pattern for request construction
+- Feature composition through function calls
+- Consistent parameter handling
+- SDK domain object management
+- DCC integration support
 
-### Authentication Flow
-```mermaid
-sequenceDiagram
-    participant TF as Test Framework
-    participant AUTH as Auth Service
-    participant API as Worldline API
+**Builder Pattern**:
+```python
+def build_create_payment_request(row, cards, address=None, networktokens=None, 
+                                threeds=None, cardonfile=None, merchantdata=None, 
+                                previous_outputs=None, dcc_context=None):
+    request = ApiPaymentRequest()
     
-    TF->>AUTH: Request OAuth Token
-    AUTH-->>TF: Access Token + Expiry
-    TF->>API: API Call (Bearer Token)
-    API-->>TF: Response
+    # 1. Apply merchant data first
+    if merchantdata: apply_merchant_data(request, row, merchantdata)
     
-    Note over TF: Token cached until expiry
+    # 2. Build core request
+    # ... core logic ...
+    
+    # 3. Apply advanced features
+    if cardonfile: apply_cardonfile_data(request, row, cardonfile, previous_outputs)
+    if threeds: apply_threed_secure_data(request, row, threeds)
+    
+    # 4. Apply DCC last
+    if dcc_context: apply_dcc_data(request, dcc_context, row)
+    
+    return clean_request(request)
 ```
 
-### DCC Integration Flow
-```mermaid
-sequenceDiagram
-    participant TF as Test Framework
-    participant DCC as DCC Service
-    participant PAY as Payment API
+### 4. **Feature Modules**
+
+**Purpose**: Independent advanced payment feature implementation
+
+**Modules**:
+- `cardonfile.py` - Card-on-File (UCOF) functionality
+- `threed_secure.py` - 3D Secure authentication & SCA exemptions
+- `merchant_data.py` - Merchant information integration
+- `network_token.py` - Network tokenization (Apple Pay, Google Pay)
+- `avs.py` - Address verification service
+- `core/dcc_manager.py` - Dynamic Currency Conversion
+
+**Feature Application Pattern**:
+```python
+def apply_feature_data(request, row, feature_config, previous_outputs=None):
+    """Standard pattern for feature application"""
+    if not pd.notna(row.get('feature_data')):
+        return  # Optional feature, skip gracefully
     
-    TF->>DCC: Request Conversion Rate
-    DCC-->>TF: Rate + Reference ID
-    TF->>TF: Store in Chain Context
-    TF->>PAY: Payment Request (with DCC data)
-    PAY-->>TF: Payment Response
+    feature_id = row['feature_data']
+    if feature_id not in feature_config.index:
+        logger.error(f"Feature ID {feature_id} not found")
+        return  # Don't fail entire test
+    
+    # Apply feature logic
+    feature_data = create_feature_object(feature_config.loc[feature_id])
+    request.feature = feature_data
 ```
 
-## Data Flow Architecture
+## Plugin Architecture
 
-### Test Execution Flow
-```mermaid
-flowchart TD
-    START([Test Execution Start]) --> LOAD[Load Configurations]
-    LOAD --> FILTER[Apply Filters & Tags]
-    FILTER --> CHAIN[Process Chain]
-    
-    CHAIN --> DCC{DCC Required?}
-    DCC -->|Yes| DCCREQ[DCC Rate Inquiry]
-    DCC -->|No| BUILD[Build Request]
-    DCCREQ --> BUILD
-    
-    BUILD --> VALIDATE[Validate Dependencies]
-    VALIDATE --> API[Execute API Call]
-    API --> ASSERT[Run Assertions]
-    ASSERT --> STORE[Store Results]
-    
-    STORE --> MORE{More Steps?}
-    MORE -->|Yes| CHAIN
-    MORE -->|No| REPORT[Generate Reports]
-    REPORT --> END([Execution Complete])
+### Registration System
+
+**Decorator Pattern**:
+```python
+def register_endpoint(call_type: str):
+    """Decorator to register an endpoint"""
+    def decorator(endpoint_class):
+        EndpointRegistry.validate_endpoint(call_type, endpoint_class)
+        EndpointRegistry.register(call_type, endpoint_class)
+        return endpoint_class
+    return decorator
 ```
 
-### Data State Management
-**Chain Context**: Maintains state across related API calls
-- Payment IDs, transaction references
-- DCC conversion data
-- Assertion results
+**Interface Enforcement**:
+```python
+class EndpointInterface(ABC):
+    @staticmethod @abstractmethod
+    def call_api(*args, **kwargs): pass
+    
+    @staticmethod @abstractmethod
+    def build_request(row, *args, **kwargs): pass
+    
+    @staticmethod @abstractmethod
+    def get_dependencies() -> List[str]: pass
+    
+    @staticmethod @abstractmethod
+    def supports_chaining() -> bool: pass
+    
+    @staticmethod @abstractmethod
+    def get_output_keys() -> List[str]: pass
+    
+    @staticmethod
+    def supports_dcc() -> bool: return False
+```
 
-**Request Context**: Immutable data for single API call
-- Test parameters
-- Configuration data
-- Previous step outputs
+### Discovery Mechanism
 
-**Global Context**: System-wide state
-- Authentication tokens
-- Environment configuration
-- Logging configuration
+**Explicit Import Strategy**:
+1. **main.py** imports `src.endpoints`
+2. **endpoints/__init__.py** imports all endpoint modules
+3. **Endpoint modules** use `@register_endpoint` decorators
+4. **Registry** validates and stores endpoint implementations
 
-## Cross-Cutting Concerns
+**Benefits of Explicit Imports**:
+- Predictable loading behavior
+- Clear dependency management
+- Easy debugging and testing
+- No filesystem scanning required
+- Works reliably across deployment environments
 
-### Logging & Monitoring
-**Architecture**: Structured logging with multiple outputs
-- **Console**: Real-time execution feedback
-- **File**: Detailed debugging information
-- **Database**: Queryable execution history
+### Endpoint Capabilities
+
+**Capability Detection**:
+- `supports_dcc()` - DCC compatibility
+- `supports_chaining()` - Chain participation
+- `get_dependencies()` - Required previous outputs
+- `get_output_keys()` - Provided outputs for subsequent steps
+
+**Dynamic Capability Usage**:
+```python
+if EndpointRegistry.endpoint_supports_dcc(call_type):
+    request = endpoint.build_request_with_dcc(row, dcc_context, **kwargs)
+else:
+    request = endpoint.build_request(row, **kwargs)
+```
+
+## Configuration Management
+
+### CSV-Based Strategy
+
+**Design Rationale**:
+- **Excel Compatibility**: Business users can edit test scenarios in familiar tools
+- **Version Control**: Text-based format works well with Git
+- **Simplicity**: No complex parsing or schema management
+- **Future Migration**: Structure designed for easy database migration
+
+**Configuration Loading Pipeline**:
+```python
+ConfigurationManager → load_all_configs() → ConfigurationSet
+    ├── load_data_file(environments.csv) → DataFrame
+    ├── load_data_file(merchants.csv) → DataFrame  
+    ├── load_data_file(cards.csv) → DataFrame
+    ├── load_data_file(cardonfile.csv) → DataFrame
+    ├── load_data_file(threeddata.csv) → DataFrame
+    ├── load_data_file(merchantdata.csv) → DataFrame
+    └── load_data_file(secrets.csv) → DataFrame
+```
+
+**Index Strategy**:
+- Primary keys become DataFrame indices for O(1) lookup
+- Relationships maintained through ID references
+- Missing configurations handled gracefully
+
+### Security Architecture
+
+**Credential Separation**:
+- `config/credentials/secrets.csv` - Sensitive API credentials (gitignored)
+- `config/static/environments.csv` - Public endpoint configurations
+- Template files for credential setup
+- Environment-specific credential management
+
+## Execution Model
+
+### Chain-Level Parallelism
+
+**Threading Architecture**:
+```python
+ThreadPoolExecutor(max_workers=thread_count)
+    ├── Chain 1 → Sequential Steps → Results
+    ├── Chain 2 → Sequential Steps → Results  
+    ├── Chain 3 → Sequential Steps → Results
+    └── Chain N → Sequential Steps → Results
+```
+
+**Benefits**:
+- **Scalability**: Multiple chains execute simultaneously
+- **Isolation**: Chain failures don't affect other chains
+- **Dependency Safety**: Steps within chains remain sequential
+- **Resource Control**: Configurable thread count prevents API overload
+
+### Step Execution Pipeline
+
+**Sequential Step Processing**:
+```
+For each step in chain:
+1. Dependency Check → Skip if missing required outputs
+2. Endpoint Resolution → Get registered endpoint implementation
+3. Request Building → Compose API request with features
+4. API Execution → Call Worldline API with error handling
+5. Response Processing → Extract IDs and update previous_outputs
+6. Assertion Validation → Comprehensive business logic checks
+7. Result Recording → Store detailed results for analysis
+```
+
+### Dependency Management
+
+**Previous Outputs Tracking**:
+```python
+previous_outputs = {
+    'payment_id': 'ABC123',
+    'refund_id': 'DEF456', 
+    'scheme_transaction_id': 'XYZ789'  # For Card-on-File chains
+}
+```
+
+**Dependency Resolution**:
+- Each endpoint declares required dependencies
+- Framework checks availability before execution
+- Missing dependencies cause graceful step skipping
+- Complex dependencies (like scheme transaction IDs) handled automatically
+
+## Data Flow
+
+### Test Data Flow
+
+```
+CSV Test Definition → DataFrame → Test Chains → Individual Steps
+    ↓
+Configuration Files → DataFrames → Feature Application
+    ↓  
+Request Building → SDK Objects → API Calls → Responses
+    ↓
+Assertion Engine → Result Objects → Database/CSV Export
+```
+
+### Feature Application Flow
+
+```
+Row Data + Configuration → Feature Module → Domain Object → Request Field
+    ↓
+Example: 'merchant_data': 'DEFAULT_MERCHANT' 
+    + merchantdata.csv 
+    → apply_merchant_data() 
+    → MerchantData object 
+    → request.merchant_data
+```
+
+### Chain Execution Flow
+
+```
+Chain Definition → Dependency Analysis → Step Ordering → Execution
+    ↓
+Step 1: create_payment → payment_id
+    ↓
+Step 2: capture_payment(payment_id) → capture_id  
+    ↓
+Step 3: refund_payment(payment_id) → refund_id
+```
+
+## Error Handling Strategy
+
+### Graceful Degradation Philosophy
+
+**Core Principle**: The framework should allow users to create "incorrect" API requests and test scenarios without blocking execution.
 
 **Implementation**:
+- Missing configurations → Skip feature application, continue test
+- Invalid dependencies → Skip step, record error, continue chain
+- API errors → Record error details, continue with next step
+- Malformed requests → Allow generation, let API return appropriate errors
+
+**Error Categories**:
+
+1. **Configuration Errors** (Non-blocking):
+   ```python
+   if feature_id not in config.index:
+       logger.error(f"Feature ID {feature_id} not found")
+       return  # Skip feature, don't fail test
+   ```
+
+2. **Dependency Errors** (Step-blocking):
+   ```python
+   if 'payment_id' not in previous_outputs:
+       result = create_error_result("payment_id not available")
+       return result  # Skip step, record error
+   ```
+
+3. **API Errors** (Recorded but not blocking):
+   ```python
+   try:
+       response = api_call(request)
+   except Exception as e:
+       result = create_error_result(str(e))
+       return result  # Record error, continue chain
+   ```
+
+### Error Recovery
+
+**Chain Isolation**: Failed chains don't affect other chains
+**Step Recovery**: Failed steps don't prevent subsequent steps (if dependencies allow)
+**Result Preservation**: All errors are recorded with full context for analysis
+
+## Extensibility Design
+
+### Adding New Endpoints
+
+**Process**:
+1. Create endpoint class implementing `EndpointInterface`
+2. Add `@register_endpoint('name')` decorator
+3. Create corresponding request builder function
+4. Add API call implementation
+5. Import in `endpoints/__init__.py`
+
+**Framework automatically**:
+- Discovers and registers the endpoint
+- Validates interface compliance
+- Makes endpoint available for test definitions
+- Integrates with all existing features
+
+### Adding New Features
+
+**Process**:
+1. Create feature module (e.g., `src/loyalty.py`)
+2. Implement `apply_loyalty_data(request, row, config)` function
+3. Add configuration file (`config/static/loyalty.csv`)
+4. Update ConfigurationManager to load loyalty config
+5. Modify request builders to call feature application
+
+**Feature Integration Pattern**:
 ```python
-logger = logging.getLogger(__name__)
-logger.info(f"[{chain_id}] API call: {call_type} - {duration}ms")
+# In request builder
+if pd.notna(row.get('loyalty_data')) and loyalty_config is not None:
+    apply_loyalty_data(request, row, loyalty_config)
 ```
 
-### Error Handling
-**Strategy**: Fail-fast with graceful degradation
-- **Configuration Errors**: Fail at startup
-- **API Errors**: Fail chain, continue execution
-- **DCC Errors**: Degrade to non-DCC execution
+### Adding New Configuration
 
-### Security
-**Approach**: Defense in depth
-- **Credential Isolation**: Separate config files, gitignored
-- **Token Management**: Automatic refresh, secure storage
-- **Input Validation**: All external data validated
-- **Network Security**: HTTPS only, certificate validation
+**Process**:
+1. Create CSV file in `config/static/`
+2. Update `ConfigurationManager.load_all_configs()`
+3. Update `ConfigurationSet` dataclass
+4. Create feature application function
+5. Integrate with request builders
 
-### Performance
-**Strategy**: Optimize for test execution speed
-- **Connection Pooling**: Reuse HTTP connections
-- **Token Caching**: Minimize authentication requests
-- **Parallel Execution**: Concurrent chain processing (configurable)
-- **Lazy Loading**: Load configurations on demand
+## Performance Considerations
 
-## Design Patterns
+### Threading Model
 
-### 1. Registry Pattern (Endpoint Management)
-**Problem**: Need to discover and manage various payment endpoints dynamically
-**Solution**: Central registry with decorator-based registration
-**Benefits**: Loose coupling, easy extension, runtime discovery
+**Chain-Level Parallelism Benefits**:
+- Maximizes throughput for independent test scenarios
+- Avoids complex step-level synchronization
+- Maintains deterministic execution within chains
+- Simplifies debugging and error tracking
 
-### 2. Builder Pattern (Request Construction)
-**Problem**: Complex API requests with many optional features
-**Solution**: Dedicated builders for each request type
-**Benefits**: Consistent construction, testability, feature composition
+**Thread Safety**:
+- Each chain has isolated execution context
+- Shared resources (registry, configuration) are read-only after initialization
+- Result collection uses thread-safe mechanisms
+- HTTP client instances are created per thread
 
-### 3. Chain of Responsibility (Feature Application)
-**Problem**: Multiple features (DCC, 3DS, AVS) need to modify requests
-**Solution**: Sequential feature application in builders
-**Benefits**: Feature independence, easy feature addition/removal
+### Configuration Loading
 
-### 4. Context Pattern (DCC Management)
-**Problem**: DCC data needed across multiple API calls in a chain
-**Solution**: Chain-scoped context objects
-**Benefits**: State isolation, clear data lifetime, easy testing
+**Optimization Strategies**:
+- DataFrames loaded once at startup
+- Index-based O(1) configuration lookups
+- Lazy loading for optional configurations
+- Memory-efficient pandas operations
 
-### 5. Strategy Pattern (Endpoint Implementations)
-**Problem**: Different payment types need different API call strategies
-**Solution**: Common interface with type-specific implementations
-**Benefits**: Polymorphism, consistent interface, easy testing
+### Request Building
 
-### 6. Template Method (Test Execution)
-**Problem**: Common execution flow with type-specific variations
-**Solution**: Base execution template with overrideable steps
-**Benefits**: Code reuse, consistent behavior, controlled variation
+**Performance Patterns**:
+- Feature application is optional and conditional
+- Object creation minimized through reuse
+- Clean request utility removes unused fields
+- SDK object creation optimized for common patterns
 
-## Scalability & Extensibility
+### API Call Efficiency
 
-### Horizontal Scaling
-- **Stateless Design**: All components are stateless (except chain context)
-- **Parallel Execution**: Configurable thread-based concurrency
-- **Database Sharding**: Results can be partitioned by environment/merchant
+**HTTP Optimization**:
+- Connection pooling through SDK
+- Configurable timeouts and connection limits
+- Retry logic for transient failures
+- Trace ID tracking for debugging
 
-### Vertical Scaling
-- **Memory Efficiency**: Streaming CSV processing, garbage collection optimization
-- **CPU Optimization**: Efficient request construction, minimal serialization
-- **I/O Optimization**: Connection pooling, batch operations
+### Result Processing
 
-### Extensibility Points
-1. **New Endpoints**: `@register_endpoint` decorator
-2. **New Features**: Request builder enhancement
-3. **New Assertion Types**: Assertion framework extension
-4. **New Output Formats**: Reporter plugin system
-5. **New Authentication**: Authentication adapter pattern
+**Storage Strategy**:
+- Streaming CSV output for large result sets
+- SQLite database for efficient querying
+- Bulk insert operations for performance
+- Configurable result retention policies
 
-### Future Architecture Considerations
-- **Microservices**: Split into execution engine + result service
-- **Event Sourcing**: Capture all test events for replay/analysis
-- **CQRS**: Separate read/write models for results
-- **Container Orchestration**: Kubernetes deployment for cloud scaling
+## Future Architecture Considerations
 
-## Quality Attributes
+### Database Migration
 
-### Maintainability
-- **Clear Separation**: Well-defined component boundaries
-- **Consistent Patterns**: Standard approaches across codebase
-- **Comprehensive Tests**: Unit and integration test coverage
-- **Documentation**: Architecture and developer guides
+**Planned Evolution**:
+- CSV files → Database tables
+- Excel editing → Web-based GUI
+- File-based config → API-based configuration management
+- Manual setup → Automated configuration deployment
 
-### Reliability
-- **Error Recovery**: Graceful failure handling
-- **Validation**: Early detection of invalid states
-- **Retry Logic**: Automatic retry for transient failures
-- **Monitoring**: Comprehensive logging and metrics
+### GUI Integration
 
-### Performance
-- **Response Time**: Sub-second API call overhead
-- **Throughput**: Hundreds of API calls per minute
-- **Resource Usage**: Minimal memory footprint
-- **Scalability**: Linear scaling with thread count
+**Architecture Preparation**:
+- Configuration abstraction layer already in place
+- REST API potential through existing modular design
+- Test definition validation ready for UI integration
+- Result visualization through existing database structure
 
-### Security
-- **Authentication**: OAuth2 with token management
-- **Authorization**: Environment-based access control
-- **Data Protection**: Credential isolation and encryption
-- **Audit Trail**: Complete execution logging
+### Advanced Features
 
-### Usability
-- **CLI Interface**: Simple, intuitive command structure
-- **Configuration**: CSV-based, non-technical friendly
-- **Feedback**: Real-time execution progress
-- **Results**: Multiple output formats (CSV, database, console)
+**Scalability Roadmap**:
+- Distributed execution across multiple nodes
+- Real-time test result streaming
+- Advanced assertion DSL for complex validations
+- Integration with external test management systems
 
-## Technology Stack
-
-### Core Technologies
-- **Python 3.9+**: Primary language
-- **Pandas**: Data manipulation and CSV processing
-- **Requests**: HTTP client for API calls
-- **SQLite**: Local result storage
-- **Logging**: Python standard library
-
-### Payment Integration
-- **Worldline Acquiring SDK**: Official Python SDK
-- **OAuth2**: Authentication protocol
-- **REST APIs**: Worldline payment and DCC services
-
-### Development & Testing
-- **Pytest**: Unit and integration testing
-- **Mock**: Test doubles and stubs
-- **Coverage**: Code coverage measurement
-- **Black**: Code formatting
-- **mypy**: Static type checking
-
-### Infrastructure
-- **Git**: Version control
-- **Virtual Environments**: Dependency isolation
-- **CSV**: Configuration and test data format
-- **JSON**: API request/response format
-
-## Decision Records
-
-### ADR-001: Request Builder Pattern
-**Decision**: Centralize request construction in dedicated builder modules
-**Rationale**: 
-- Separation of concerns between API calls and request construction
-- Easier testing of request building logic
-- Consistent request structure across endpoints
-**Trade-offs**: Additional abstraction layer, but improved maintainability
-
-### ADR-002: Endpoint Registry Pattern
-**Decision**: Use decorator-based registration for dynamic endpoint discovery
-**Rationale**:
-- Eliminates need to modify central registry when adding endpoints
-- Supports plugin-style architecture
-- Runtime discovery enables flexible test execution
-**Trade-offs**: Slight performance overhead, but major maintainability gain
-
-### ADR-003: CSV-Based Configuration
-**Decision**: Use CSV files for test definitions and configuration
-**Rationale**:
-- Non-technical users can create/modify tests
-- Easy integration with spreadsheet applications
-- Simple data model for tabular test data
-**Trade-offs**: Limited expressiveness vs. JSON/YAML, but improved accessibility
-
-### ADR-004: Chain-Based Test Execution
-**Decision**: Support sequences of related API calls with shared state
-**Rationale**:
-- Real payment workflows require multiple API calls
-- State sharing necessary for realistic testing
-- Dependency management essential for test reliability
-**Trade-offs**: Increased complexity vs. simple isolated tests, but enables realistic scenarios
-
-### ADR-005: Centralized DCC Management
-**Decision**: Handle DCC as a cross-cutting concern with centralized management
-**Rationale**:
-- DCC applies to multiple payment types consistently
-- Rate inquiry and context management are complex
-- Centralization ensures consistent behavior
-**Trade-offs**: Additional abstraction, but prevents DCC logic duplication
-
-### ADR-006: Fail-Fast Validation Strategy
-**Decision**: Validate configurations and dependencies early in execution
-**Rationale**:
-- Faster feedback for configuration errors
-- Prevents partial test execution with invalid setup
-- Clearer error messages for troubleshooting
-**Trade-offs**: Upfront validation cost, but reduced debugging time
-
----
-
-## Summary
-
-This architecture successfully balances **flexibility** and **simplicity**, enabling comprehensive payment API testing while maintaining code quality and developer productivity. The modular design supports rapid extension for new payment methods and features, while the configuration-driven approach enables non-technical test management.
-
-Key architectural strengths:
-- **Extensible**: New endpoints added without core changes
-- **Maintainable**: Clear separation of concerns and consistent patterns
-- **Reliable**: Comprehensive error handling and validation
-- **Performant**: Efficient execution with configurable concurrency
-- **Secure**: Proper credential management and API security
-
-The architecture positions the framework for future growth while meeting current testing requirements effectively.
-
-
-This architecture guide covers:
-
-- ✅ **High-level system design** and component interactions
-- ✅ **Architectural principles** and rationale behind design decisions
-- ✅ **Design patterns** used throughout the system
-- ✅ **Scalability and extensibility** considerations
-- ✅ **Quality attributes** (performance, security, maintainability)
-- ✅ **Technology stack** and integration patterns
-- ✅ **Decision records** documenting key architectural choices
-- ✅ **Visual diagrams** using Mermaid for clarity
-- ✅ **Future considerations** for system evolution
-
-The guide is written for architects and senior engineers who need to understand the system's overall design, make informed decisions about extensions, and evaluate the architecture's fitness for purpose.
+The Payment API Testing Framework architecture provides a solid foundation for comprehensive payment testing while maintaining flexibility for future enhancements and integrations. The modular, plugin-based design ensures that new payment methods, features, and capabilities can be added without disrupting existing functionality.

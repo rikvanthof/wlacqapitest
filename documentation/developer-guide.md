@@ -1,452 +1,708 @@
-# Developer Guide - Payment API Test Framework
-
-## Table of Contents
-- [Overview](#overview)
-- [Design Principles](#design-principles)
-- [Project Structure](#project-structure)
-- [Core Concepts](#core-concepts)
-- [Getting Started](#getting-started)
-- [Adding New Endpoints](#adding-new-endpoints)
-- [DCC Implementation](#dcc-implementation)
-- [Testing & Debugging](#testing--debugging)
-- [Common Patterns](#common-patterns)
-- [Troubleshooting](#troubleshooting)
+# Developer Guide
 
 ## Overview
 
-This is a Python testing framework for Worldline Acquiring payment APIs. It supports complex payment workflows including:
-- Payment creation, increments, captures, and refunds
-- Dynamic Currency Conversion (DCC)
-- 3D Secure authentication
-- Address Verification (AVS)
-- Network Tokens
-- Card-on-File scenarios
+This guide covers extending and modifying the Payment API Testing Framework. The framework uses a plugin-based architecture with automatic endpoint discovery, request builder patterns, and feature composition for advanced payment capabilities including SCA exemptions, merchant data, partial operations, and brand selection.
 
-### Key Features
-- **Chain-based testing**: Execute sequences of related API calls
-- **DCC support**: Automatic currency conversion handling
-- **Endpoint registry**: Modular, extensible endpoint management
-- **Request builders**: Clean separation of request construction logic
-- **Comprehensive logging**: Detailed execution tracking
+## Table of Contents
 
-## Design Principles
+- [Architecture Overview](#architecture-overview)
+- [Adding New Endpoints](#adding-new-endpoints)
+- [Creating Request Builders](#creating-request-builders)
+- [Advanced Payment Features](#advanced-payment-features)
+- [API Property Enhancements](#api-property-enhancements)
+- [Configuration Management](#configuration-management)
+- [Testing Your Extensions](#testing-your-extensions)
+- [Best Practices](#best-practices)
+- [Debugging and Troubleshooting](#debugging-and-troubleshooting)
 
-### 1. Request Builder Pattern
-**Problem**: API request construction was scattered across endpoint files, making it hard to maintain and test.
+## Architecture Overview
 
-**Solution**: Centralized request building in dedicated `src/request_builders/` modules.
-
-```python
-# ✅ Good: Request builder handles all construction logic
-def build_create_payment_request(row, cards, dcc_context=None):
-    request = ApiPaymentRequest()
-    # All request construction logic here
-    return request
-
-# ✅ Good: Endpoint delegates to builder
-class CreatePaymentEndpoint:
-    @staticmethod
-    def build_request(row, **kwargs):
-        return build_create_payment_request(row, **kwargs)
-```
-
-### 2. Endpoint Registry Pattern
-**Problem**: Hard-coded endpoint handling made adding new endpoints difficult.
-
-**Solution**: Dynamic endpoint registration and lookup system.
-
-```python
-# ✅ Registration happens automatically via decorator
-@register_endpoint('create_payment')
-class CreatePaymentEndpoint(EndpointInterface):
-    # Implementation here
-
-# ✅ Usage is clean and consistent
-endpoint = EndpointRegistry.get_endpoint('create_payment')
-request = endpoint.build_request(row)
-```
-
-### 3. Separation of Concerns
-- **Endpoints**: Handle API calls and basic request routing
-- **Request Builders**: Construct API request objects
-- **Core Managers**: Handle cross-cutting concerns (DCC, chains)
-- **Utils**: Shared functionality (logging, data cleaning)
-
-### 4. DCC Integration Pattern
-DCC (Dynamic Currency Conversion) is integrated consistently across all payment endpoints:
-1. **Inquiry**: Get conversion rates before main API call
-2. **Context**: Store conversion data for the chain
-3. **Application**: Use conversion data in request builders
-
-## Project Structure
+### Project Structure
 
 ```
-wlacqapitest/
-├── src/
-│   ├── core/                      # Core system components
-│   │   ├── dcc_manager.py         # DCC logic and context management
-│   │   ├── endpoint_registry.py   # Endpoint registration system
-│   │   └── payment_assertions.py  # Response validation
-│   ├── endpoints/                 # API endpoint implementations
-│   │   ├── create_payment_endpoint.py
-│   │   ├── capture_payment_endpoint.py
-│   │   └── ...
-│   ├── request_builders/          # Request construction logic
-│   │   ├── create_payment.py
-│   │   ├── capture_payment.py
-│   │   └── ...
-│   ├── config/                    # Configuration management
-│   ├── api_calls.py               # Low-level API communication
-│   ├── main.py                    # Test execution engine
-│   └── utils.py                   # Shared utilities
-├── config/                        # Test configuration
-│   ├── static/                    # Cards, merchants, environments
-│   ├── credentials/               # API credentials (gitignored)
-│   └── test_suites/               # Test definitions
-├── tests/                         # Unit tests
-├── documentation/                 # Project documentation
-└── debug/                         # Debug tools (gitignored)
+src/
+├── core/                           # Core framework components
+│   ├── endpoint_registry.py       # Plugin system for endpoints
+│   ├── dcc_manager.py             # DCC functionality
+│   ├── payment_assertions.py      # Response validation
+│   └── tag_filter.py              # Test filtering
+├── endpoints/                      # API endpoint implementations
+│   ├── create_payment_endpoint.py
+│   ├── capture_payment_endpoint.py
+│   ├── standalone_refund_endpoint.py
+│   └── ...                        # 14 total endpoints
+├── request_builders/               # Request construction logic
+│   ├── create_payment.py
+│   ├── capture_payment.py
+│   ├── standalone_refund.py
+│   └── ...                        # 13 total builders
+├── config/                         # Configuration management
+│   └── config_manager.py
+├── avs.py                         # Address verification
+├── cardonfile.py                  # Card-on-File functionality
+├── merchant_data.py               # Merchant data integration
+├── threed_secure.py               # 3D Secure & SCA exemptions
+├── network_token.py               # Network tokenization
+├── utils.py                       # Utility functions
+├── api_calls.py                   # HTTP client interactions
+├── response_utils.py              # Response processing
+└── results_handler.py             # Result formatting
 ```
 
-## Core Concepts
+### Key Design Patterns
 
-### Test Chains
-A **chain** is a sequence of related API calls that share context (like payment IDs).
-
-```csv
-chain_id,test_id,call_type,amount,currency
-chain7,API0050,create_payment,555,GBP
-chain7,API0060,increment_payment,444,GBP
-chain7,API0070,capture_payment,222,GBP
-chain7,API0080,refund_payment,111,GBP
-```
-
-### DCC Context
-DCC data is shared across a chain using `DCCContext`:
-
-```python
-@dataclass
-class DCCContext:
-    rate_reference_id: str          # DCC rate ID from inquiry
-    original_amount: Dict           # Merchant currency amount
-    resulting_amount: Dict          # Customer currency amount  
-    inverted_exchange_rate: float   # Conversion rate
-```
-
-### Endpoint Interface
-All endpoints implement the same interface:
-
-```python
-class EndpointInterface:
-    @staticmethod
-    def call_api(client, *args):
-        """Execute the API call"""
-        
-    @staticmethod  
-    def build_request(row, **kwargs):
-        """Build the API request object"""
-        
-    @staticmethod
-    def supports_dcc() -> bool:
-        """Whether endpoint supports DCC"""
-```
-
-## Getting Started
-
-### 1. Environment Setup
-```bash
-# Clone and setup
-git clone <repository>
-cd wlacqapitest
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
-```
-
-### 2. Configuration
-```bash
-# Copy credentials template
-cp config/credentials/secrets.csv.template config/credentials/secrets.csv
-
-# Edit with your API credentials
-nano config/credentials/secrets.csv
-```
-
-### 3. Run Tests
-```bash
-# Run all smoke tests
-python -m src.main --tests smoke_tests.csv
-
-# Run DCC tests only
-python -m src.main --tests smoke_tests.csv --tags dcc --verbose
-
-# Run specific test
-python -m src.main --tests smoke_tests.csv --test-ids API0050
-```
+1. **Plugin Architecture**: Endpoints auto-register using decorators
+2. **Builder Pattern**: Request construction with feature composition
+3. **Chain of Responsibility**: Sequential feature application
+4. **Registry Pattern**: Centralized endpoint and capability management
+5. **Strategy Pattern**: Endpoint-specific implementations with common interfaces
 
 ## Adding New Endpoints
 
-### Step 1: Create Request Builder
-Create `src/request_builders/new_endpoint.py`:
+### Step 1: Create Endpoint Implementation
+
+Create `src/endpoints/your_endpoint.py`:
 
 ```python
-"""Build requests for new_endpoint API calls"""
-from worldline.acquiring.sdk.v1.domain.api_new_request import ApiNewRequest
-from ..utils import clean_request
+"""Your new endpoint with enhanced features"""
 
-def build_new_endpoint_request(row, dcc_context=None):
-    """Build request for new endpoint"""
-    request = ApiNewRequest()
-    
-    # Set required fields from row data
-    request.operation_id = row['test_id'] + ':' + generate_random_string(32)
-    
-    # Add DCC support if needed
-    if dcc_context and dcc_context.rate_reference_id:
-        # Apply DCC data (see existing examples)
-        pass
-        
-    return clean_request(request)
-```
-
-### Step 2: Create Endpoint Class
-Create `src/endpoints/new_endpoint.py`:
-
-```python
-"""New Endpoint implementation"""
 from ..core.endpoint_registry import register_endpoint, EndpointInterface
-from ..api_calls import new_api_call
-from ..request_builders.new_endpoint import build_new_endpoint_request
+from ..api_calls import your_api_call
+from ..request_builders.your_endpoint import build_your_request
+from typing import List
 
-@register_endpoint('new_endpoint')  # ✅ Auto-registration
-class NewEndpoint(EndpointInterface):
+@register_endpoint('your_endpoint')
+class YourEndpoint(EndpointInterface):
+    """Your endpoint with full feature support"""
     
     @staticmethod
-    def call_api(client, acquirer_id, merchant_id, request):
-        """Execute the API call"""
-        return new_api_call(client, acquirer_id, merchant_id, request)
+    def call_api(client, acquirer_id: str, merchant_id: str, request):
+        """Execute your API call"""
+        return your_api_call(client, acquirer_id, merchant_id, request)
     
     @staticmethod
-    def build_request(row, **kwargs):
-        """Build request without DCC"""
-        return build_new_endpoint_request(row)
+    def build_request(row, cards=None, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
+        """Build request with full feature support"""
+        return build_your_request(row, cards, address, networktokens, threeds, cardonfile, merchantdata, previous_outputs, dcc_context)
     
     @staticmethod
-    def build_request_with_dcc(row, dcc_context=None, **kwargs):
-        """Build request with DCC support"""
-        return build_new_endpoint_request(row, dcc_context)
+    def build_request_with_dcc(row, dcc_context=None, cards=None, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None):
+        """Build request with DCC context"""
+        return build_your_request(row, cards, address, networktokens, threeds, cardonfile, merchantdata, previous_outputs, dcc_context)
+    
+    @staticmethod
+    def get_dependencies() -> List[str]:
+        """Return required dependencies (e.g., ['payment_id'])"""
+        return ['dependency_id']  # or [] if no dependencies
+    
+    @staticmethod
+    def supports_chaining() -> bool:
+        """Whether this endpoint can be used in chains"""
+        return True
+    
+    @staticmethod
+    def get_output_keys() -> List[str]:
+        """What this endpoint provides for other steps"""
+        return ['your_id']
     
     @staticmethod
     def supports_dcc() -> bool:
         """Whether this endpoint supports DCC"""
         return True  # or False
-    
-    @staticmethod
-    def get_dependencies() -> List[str]:
-        """Required previous outputs"""
-        return ['payment_id']  # or []
 ```
 
-### Step 3: Add API Call Function
+### Step 2: Add API Call Implementation
+
 Add to `src/api_calls.py`:
 
 ```python
-def new_api_call(client, acquirer_id, merchant_id, request):
-    """Execute new API call"""
+def your_api_call(client, acquirer_id, merchant_id, request):
+    """Execute your API call with error handling"""
     try:
-        logger.info(f"Executing new call - Acquirer: {acquirer_id}")
-        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).new_calls().create(request)
-        logger.info(f"New call successful")
+        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).your_endpoint().post(request)
         return response
     except Exception as e:
-        logger.error(f"New call failed: {e}")
+        logger.error(f"API call failed: {e}")
         raise
 ```
 
-### Step 4: Update Main Logic (if needed)
-The endpoint registry automatically handles new endpoints, but you may need to update `src/main.py` if the new endpoint has special argument requirements.
+### Step 3: Register in Main Module
 
-## DCC Implementation
+The framework will automatically discover your endpoint through the `@register_endpoint` decorator when the module is imported.
 
-### How DCC Works
-1. **Inquiry Phase**: Before main API call, query DCC rates
-2. **Context Phase**: Store DCC data in chain context
-3. **Application Phase**: Use DCC data in request construction
+## Creating Request Builders
 
-### DCC in Request Builders
-All DCC-enabled request builders follow this pattern:
+### Basic Request Builder Structure
+
+Create `src/request_builders/your_endpoint.py`:
 
 ```python
-def build_payment_request(row, dcc_context=None):
-    request = ApiPaymentRequest()
+"""Build requests for your_endpoint API calls"""
+import pandas as pd
+import datetime
+from worldline.acquiring.sdk.v1.domain.your_request import YourRequest
+from worldline.acquiring.sdk.v1.domain.amount_data import AmountData
+
+from ..utils import generate_random_string, clean_request
+from ..avs import apply_avs_data
+from ..network_token import apply_network_token_data
+from ..threed_secure import apply_threed_secure_data
+from ..cardonfile import apply_cardonfile_data
+from ..merchant_data import apply_merchant_data
+from ..core.dcc_manager import DCCContext
+
+def build_your_request(row, cards=None, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
+    """Build YourRequest with full feature support"""
     
-    # Use DCC resulting amount for main transaction amount
-    if dcc_context and dcc_context.resulting_amount:
-        amount_data = AmountData()
-        amount_data.amount = dcc_context.resulting_amount['amount']
-        amount_data.currency_code = dcc_context.resulting_amount['currency_code']
-        amount_data.number_of_decimals = dcc_context.resulting_amount['number_of_decimals']
-        request.amount = amount_data
-    else:
-        # Use test amount (merchant currency)
+    request = YourRequest()
+    
+    # Add Merchant data if specified
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
+    
+    # Apply basic fields
+    if pd.notna(row.get('amount')):
         amount_data = AmountData()
         amount_data.amount = int(row['amount'])
         amount_data.currency_code = row['currency']
         amount_data.number_of_decimals = 2
         request.amount = amount_data
     
-    # Add DCC fields if available
-    if dcc_context and dcc_context.rate_reference_id:
-        dcc_data = DccData()
-        dcc_data.amount = int(row['amount'])  # Original merchant amount
-        dcc_data.currency_code = row['currency']  # Original merchant currency
-        dcc_data.number_of_decimals = 2
-        dcc_data.conversion_rate = dcc_context.inverted_exchange_rate
-        request.dynamic_currency_conversion = dcc_data
+    # Apply advanced payment features
+    if pd.notna(row.get('address_data')) and address is not None:
+        apply_avs_data(request, row, address)
     
+    if pd.notna(row.get('network_token_data')) and networktokens is not None:
+        apply_network_token_data(request, row, networktokens)
+    
+    if pd.notna(row.get('threed_secure_data')) and threeds is not None:
+        apply_threed_secure_data(request, row, threeds)
+    
+    if pd.notna(row.get('card_on_file_data')) and cardonfile is not None:
+        apply_cardonfile_data(request, row, cardonfile, previous_outputs)
+    
+    # Apply API property enhancements
+    if pd.notna(row.get('brand_selector')):
+        # Apply to appropriate field based on endpoint
+        if hasattr(request, 'card_payment_data'):
+            request.card_payment_data.brand_selector = row['brand_selector']
+    
+    if pd.notna(row.get('is_final')):
+        request.is_final = str(row['is_final']).upper() == 'TRUE'
+    
+    # Apply DCC data if context provided
+    if dcc_context:
+        apply_dcc_data(request, dcc_context, row)
+    
+    return clean_request(request)
+
+def apply_dcc_data(request, dcc_context, row):
+    """Apply DCC data to request"""
+    if not dcc_context or not dcc_context.rate_reference_id:
+        return request
+    
+    from worldline.acquiring.sdk.v1.domain.dcc_data import DccData
+    
+    dcc_data = DccData()
+    dcc_data.amount = int(row['amount'])
+    dcc_data.currency_code = row['currency']
+    dcc_data.number_of_decimals = 2
+    dcc_data.conversion_rate = dcc_context.inverted_exchange_rate
+    
+    request.dynamic_currency_conversion = dcc_data
     return request
 ```
 
-### Key DCC Points
-- **Main amount**: Use DCC resulting amount (customer currency)
-- **DCC object**: Contains original merchant amount and conversion rate
-- **Consistency**: All endpoints follow the same pattern
+### Card-Based Request Builder
 
-## Testing & Debugging
+For endpoints that use cards:
 
-### Debug Tools
-The `debug/` folder contains helpful debugging scripts:
-
-```bash
-# Test DCC request structure
-python debug/dcc_testing/debug_dcc_request.py
-
-# Test specific request builders
-python debug/request_testing/debug_capture_request.py
-
-# Test endpoint connectivity
-python debug/request_testing/debug_which_method.py
+```python
+def build_card_based_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
+    """Build request for card-based endpoint"""
+    
+    card_row = cards.loc[row['card_id']]
+    request = YourCardRequest()
+    
+    # Add Merchant data first
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
+    
+    # Build card data
+    from worldline.acquiring.sdk.v1.domain.plain_card_data import PlainCardData
+    from worldline.acquiring.sdk.v1.domain.card_payment_data import CardPaymentData
+    
+    card_data = PlainCardData()
+    card_data.card_number = str(card_row['card_number'])
+    card_data.expiry_date = str(card_row['expiry_date'])
+    
+    if pd.notna(card_row.get('card_security_code')):
+        card_data.card_security_code = str(card_row['card_security_code'])
+    
+    card_payment_data = CardPaymentData()
+    card_payment_data.card_data = card_data
+    
+    # Apply brand selector
+    if pd.notna(row.get('brand_selector')):
+        card_payment_data.brand_selector = row['brand_selector']
+    
+    request.card_payment_data = card_payment_data
+    
+    # Apply advanced features...
+    # (same as above)
+    
+    return clean_request(request)
 ```
+
+## Advanced Payment Features
+
+### Card-on-File Integration
+
+```python
+# In your request builder
+if pd.notna(row.get('card_on_file_data')) and cardonfile is not None:
+    apply_cardonfile_data(request, row, cardonfile, previous_outputs)
+```
+
+The `apply_cardonfile_data` function handles:
+- Initial vs. subsequent transactions
+- Scheme transaction ID linking
+- CIT vs. MIT scenarios
+
+### 3D Secure & SCA Exemptions
+
+```python
+# In your request builder  
+if pd.notna(row.get('threed_secure_data')) and threeds is not None:
+    apply_threed_secure_data(request, row, threeds)
+```
+
+Supports:
+- Full 3D Secure authentication
+- Exemption-only scenarios (no 3DS data)
+- Combined 3DS + exemption requests
+- All SCA exemption types
+
+### Merchant Data Integration
+
+```python
+# In your request builder (apply first)
+if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+    apply_merchant_data(request, row, merchantdata)
+```
+
+The `apply_merchant_data` function adds:
+- Merchant Category Code (MCC)
+- Business name and address
+- Complete merchant information
+
+### Network Token Support
+
+```python
+# In your request builder
+if pd.notna(row.get('network_token_data')) and networktokens is not None:
+    apply_network_token_data(request, row, networktokens)
+```
+
+Handles:
+- Apple Pay integration
+- Google Pay integration  
+- Token cryptograms and ECI values
+
+### Address Verification
+
+```python
+# In your request builder
+if pd.notna(row.get('address_data')) and address is not None:
+    apply_avs_data(request, row, address)
+```
+
+## API Property Enhancements
+
+### Partial Operations Support
+
+```python
+def build_capture_payment_request(row, cards=None, **kwargs):
+    """Build capture request with partial operation support"""
+    request = ApiCaptureRequest()
+    
+    # Apply partial operation flags
+    if pd.notna(row.get('is_final')):
+        request.is_final = str(row['is_final']).upper() == 'TRUE'
+    
+    if pd.notna(row.get('capture_sequence_number')):
+        request.capture_sequence_number = int(row['capture_sequence_number'])
+    
+    return clean_request(request)
+```
+
+### Brand Selection Control
+
+```python
+def apply_brand_selector(request, row):
+    """Apply brand selector to card-based requests"""
+    if pd.notna(row.get('brand_selector')):
+        if hasattr(request, 'card_payment_data') and request.card_payment_data:
+            request.card_payment_data.brand_selector = row['brand_selector']
+```
+
+### SCA Exemption Implementation
+
+Create exemption-only scenarios:
+
+```python
+# In threeddata.csv
+three_d_id,three_d_secure_type,authentication_value,eci,version,sca_exemption_requested
+LVP_NO3DS,,,,,LOW_VALUE_PAYMENT
+TRA_NO3DS,,,,,TRANSACTION_RISK_ANALYSIS
+```
+
+The framework automatically handles exemption application without 3DS data.
+
+## Configuration Management
+
+### Adding New Configuration Files
+
+1. **Create CSV file** in `config/static/your_feature.csv`
+2. **Update ConfigurationManager** in `src/config/config_manager.py`:
+
+```python
+def load_all_configs(self, test_file_path):
+    """Load all configuration files"""
+    # ... existing code ...
+    
+    # Load your new configuration
+    your_feature_path = os.path.join(self.config_dir, 'static', 'your_feature.csv')
+    your_feature = self.load_data_file(your_feature_path, 'your_feature_id') if os.path.exists(your_feature_path) else None
+    
+    return ConfigurationSet(
+        # ... existing parameters ...
+        your_feature=your_feature
+    )
+```
+
+3. **Update ConfigurationSet** dataclass:
+
+```python
+@dataclass
+class ConfigurationSet:
+    # ... existing fields ...
+    your_feature: Optional[pd.DataFrame] = None
+```
+
+### Feature Application Pattern
+
+Create `src/your_feature.py`:
+
+```python
+"""Your feature data handling for API requests"""
+
+import pandas as pd
+import logging
+from worldline.acquiring.sdk.v1.domain.your_domain import YourDomain
+
+logger = logging.getLogger(__name__)
+
+def apply_your_feature_data(request, row, your_feature_config):
+    """Apply your feature data to the request if specified in the row"""
+    
+    if not pd.notna(row.get('your_feature_data')):
+        logger.debug("No your feature data specified in test row")
+        return
+    
+    feature_id = row['your_feature_data']
+    logger.debug(f"Applying your feature data: {feature_id}")
+    
+    if feature_id not in your_feature_config.index:
+        logger.error(f"Feature ID {feature_id} not found in configuration")
+        return
+    
+    feature_row = your_feature_config.loc[feature_id]
+    
+    # Create and populate domain object
+    your_domain = YourDomain()
+    your_domain.your_field = feature_row['your_field']
+    
+    # Apply to appropriate request field
+    request.your_feature = your_domain
+    
+    logger.debug(f"Applied your feature: {feature_id}")
+```
+
+## Testing Your Extensions
 
 ### Unit Tests
+
+Create `tests/test_your_endpoint.py`:
+
+```python
+"""Tests for your endpoint"""
+import pytest
+from unittest.mock import Mock, MagicMock
+from src.endpoints.your_endpoint import YourEndpoint
+
+class TestYourEndpoint:
+    """Test your endpoint implementation"""
+    
+    def test_supports_dcc(self):
+        """Test DCC support declaration"""
+        assert YourEndpoint.supports_dcc() == True
+    
+    def test_get_dependencies(self):
+        """Test dependency requirements"""
+        deps = YourEndpoint.get_dependencies()
+        assert isinstance(deps, list)
+        assert 'dependency_id' in deps
+    
+    def test_build_request(self, mock_cards_df):
+        """Test request building"""
+        row = pd.Series({
+            'test_id': 'TEST001',
+            'card_id': 'visa_card',
+            'amount': 1000,
+            'currency': 'GBP'
+        })
+        
+        request = YourEndpoint.build_request(row, cards=mock_cards_df)
+        assert request is not None
+        assert request.amount.amount == 1000
+        assert request.amount.currency_code == 'GBP'
+```
+
+Create `tests/test_request_builders/test_your_endpoint.py`:
+
+```python
+"""Tests for your request builder"""
+import pytest
+import pandas as pd
+from src.request_builders.your_endpoint import build_your_request
+
+class TestBuildYourRequest:
+    """Test your request builder"""
+    
+    def test_build_basic_request(self, mock_cards_df):
+        """Test basic request building"""
+        row = pd.Series({
+            'test_id': 'TEST001',
+            'card_id': 'visa_card',
+            'amount': 1000,
+            'currency': 'GBP'
+        })
+        
+        request = build_your_request(row, mock_cards_df)
+        assert request.amount.amount == 1000
+        assert request.amount.currency_code == 'GBP'
+    
+    def test_build_with_merchant_data(self, mock_cards_df, mock_merchantdata_df):
+        """Test with merchant data"""
+        row = pd.Series({
+            'test_id': 'TEST002',
+            'card_id': 'visa_card',
+            'merchant_data': 'DEFAULT_MERCHANT',
+            'amount': 500,
+            'currency': 'EUR'
+        })
+        
+        request = build_your_request(row, mock_cards_df, merchantdata=mock_merchantdata_df)
+        assert hasattr(request, 'merchant_data')
+        assert request.merchant_data.merchant_category_code == 5812
+    
+    def test_build_with_brand_selector(self, mock_cards_df):
+        """Test brand selector application"""
+        row = pd.Series({
+            'test_id': 'TEST003',
+            'card_id': 'visa_card',
+            'brand_selector': 'MERCHANT',
+            'amount': 750,
+            'currency': 'USD'
+        })
+        
+        request = build_your_request(row, mock_cards_df)
+        assert request.card_payment_data.brand_selector == 'MERCHANT'
+```
+
+### Integration Testing
+
+Test your endpoint in a real test scenario:
+
+```csv
+chain_id,step_order,call_type,test_id,tags,card_id,merchant_id,env,amount,currency,merchant_data,brand_selector,expected_http_status
+your_test,1,your_endpoint,YOUR001,custom,visa_card,merchant1,preprod,1000,GBP,DEFAULT_MERCHANT,MERCHANT,201
+```
+
 ```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_request_builders/test_create_payment.py
-
-# Run with coverage
-pytest --cov=src
+# Test your endpoint
+python -m src.main --tests your_test.csv --verbose
 ```
-
-### Common Debug Patterns
-```python
-# Add debug prints in request builders
-print(f"🔍 DEBUG: DCC context: {dcc_context}")
-print(f"🔍 DEBUG: Request dict: {request.to_dictionary()}")
-
-# Add debug prints in endpoints
-print(f"🔍 DEBUG: Calling {endpoint.__class__.__name__}")
-```
-
-## Common Patterns
-
-### 1. Error Handling
-```python
-try:
-    response = endpoint.call_api(*args)
-    # Handle success
-except Exception as e:
-    logger.error(f"API call failed: {e}")
-    # Create error result
-    return create_error_result(chain_id, row, call_type, e, duration)
-```
-
-### 2. Request Cleaning
-```python
-from ..utils import clean_request
-
-def build_request(row):
-    request = ApiRequest()
-    # ... build request
-    return clean_request(request)  # ✅ Always clean before returning
-```
-
-### 3. Conditional DCC
-```python
-# In main.py
-if dcc_context and endpoint.supports_dcc():
-    request = endpoint.build_request_with_dcc(row, dcc_context)
-else:
-    request = endpoint.build_request(row)
-```
-
-### 4. Chain Dependency Validation
-```python
-# Check if required previous outputs exist
-if 'payment_id' not in previous_outputs:
-    return create_dependency_error_result(chain_id, row, call_type, 
-                                        "payment_id required but not found")
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. Empty DCC Objects
-**Symptom**: `"dynamicCurrencyConversion": {}` in request data
-**Cause**: Wrong field names in DccData object
-**Solution**: Use correct SDK field names: `amount`, `currency_code`, `number_of_decimals`, `conversion_rate`
-
-#### 2. DCC Context Not Found
-**Symptom**: `dcc_context is None` in debug output
-**Cause**: Endpoint not calling `build_request_with_dcc`
-**Solution**: Check main.py logic for DCC-enabled endpoints
-
-#### 3. Request Builder Import Errors
-**Symptom**: `ModuleNotFoundError` when importing request builder
-**Cause**: Missing `__init__.py` or circular imports
-**Solution**: Check import paths and ensure proper module structure
-
-#### 4. Endpoint Not Found
-**Symptom**: `Unknown call_type: new_endpoint`
-**Cause**: Endpoint not registered or import issue
-**Solution**: Ensure `@register_endpoint` decorator is used and module is imported
-
-### Debug Checklist
-1. ✅ Check endpoint registration: `EndpointRegistry.get_all_endpoints()`
-2. ✅ Verify DCC context: Add debug prints in request builders
-3. ✅ Check request structure: Use `.to_dictionary()` method
-4. ✅ Validate test data: Ensure CSV has required columns
-5. ✅ Check credentials: Verify API credentials are correct
-
-### Getting Help
-- Check existing debug scripts in `debug/` folder
-- Review unit tests for examples
-- Look at working endpoints for patterns
-- Add debug prints to trace execution flow
 
 ## Best Practices
 
 ### Code Organization
-- Keep request builders focused on construction only
-- Use endpoints only for API calls and routing
-- Put business logic in core managers
-- Follow existing naming conventions
 
-### Testing
-- Write unit tests for new request builders
-- Test both DCC and non-DCC scenarios  
-- Use debug scripts for integration testing
-- Validate request structures with `.to_dictionary()`
+1. **Separation of Concerns**: Keep endpoint logic, request building, and feature application separate
+2. **Consistent Patterns**: Follow existing patterns for parameter handling and error management
+3. **Feature Composition**: Make features optional and composable
+4. **Error Handling**: Provide clear error messages for missing configurations
 
-### Documentation
-- Document new endpoints in this guide
-- Add docstrings to all public methods
-- Include examples in docstrings
-- Update README.md for user-facing changes
+### Request Builder Guidelines
 
----
+```python
+def build_your_request(row, cards=None, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
+    """
+    Follow these patterns:
+    1. Apply merchant data first (if applicable)
+    2. Build core request structure
+    3. Apply advanced payment features
+    4. Apply API property enhancements
+    5. Apply DCC data last
+    6. Always return clean_request(request)
+    """
+    request = YourRequest()
+    
+    # 1. Merchant data first
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
+    
+    # 2. Core structure
+    # ... build basic request ...
+    
+    # 3. Advanced features
+    if pd.notna(row.get('card_on_file_data')) and cardonfile is not None:
+        apply_cardonfile_data(request, row, cardonfile, previous_outputs)
+    
+    # 4. API properties
+    if pd.notna(row.get('brand_selector')):
+        # Apply brand selector logic
+    
+    # 5. DCC last
+    if dcc_context:
+        apply_dcc_data(request, dcc_context, row)
+    
+    # 6. Clean and return
+    return clean_request(request)
+```
 
-*This guide covers the core concepts and patterns. For specific implementation details, refer to existing code examples and unit tests.*
+### Configuration Best Practices
+
+1. **Consistent IDs**: Use descriptive, consistent identifiers
+2. **Optional Fields**: Make advanced features optional with sensible defaults
+3. **Validation**: Add validation for required fields and relationships
+4. **Documentation**: Document CSV formats and field meanings
+
+### Error Handling
+
+```python
+def apply_your_feature(request, row, config):
+    """Apply your feature with proper error handling"""
+    try:
+        if not pd.notna(row.get('your_feature_data')):
+            return  # Optional feature, skip gracefully
+        
+        feature_id = row['your_feature_data']
+        
+        if feature_id not in config.index:
+            logger.error(f"Feature ID {feature_id} not found in configuration")
+            return  # Don't fail the entire test
+        
+        # Apply feature logic
+        
+    except Exception as e:
+        logger.error(f"Error applying your feature: {e}")
+        # Don't re-raise unless critical
+```
+
+## Debugging and Troubleshooting
+
+### Debug Your Endpoint
+
+```bash
+# Test specific endpoint
+python -m src.main --tests your_test.csv --verbose
+
+# Debug with single thread
+python -m src.main --tests your_test.csv --threads 1 --verbose
+
+# Test endpoint registration
+python -c "
+from src.core.endpoint_registry import get_endpoint
+endpoint = get_endpoint('your_endpoint')
+print(f'Endpoint: {endpoint}')
+print(f'Supports DCC: {endpoint.supports_dcc()}')
+print(f'Dependencies: {endpoint.get_dependencies()}')
+"
+```
+
+### Common Issues
+
+**Endpoint Not Found:**
+- Ensure `@register_endpoint('name')` decorator is used
+- Check that endpoint module is imported
+- Verify endpoint name matches test file `call_type`
+
+**Request Building Errors:**
+- Check parameter types (DataFrame vs dict)
+- Ensure required SDK domain objects are imported
+- Verify field names match SDK expectations
+
+**Feature Application Issues:**
+- Check configuration file exists and has correct headers
+- Verify feature IDs exist in configuration
+- Ensure feature application doesn't conflict with other features
+
+### Logging and Debugging
+
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+def your_function():
+    logger.debug("Debug information")
+    logger.info("Important information")
+    logger.warning("Warning message")
+    logger.error("Error message")
+```
+
+Enable debug logging:
+```bash
+python -m src.main --tests your_test.csv --verbose --log-level DEBUG
+```
+
+## Advanced Extension Examples
+
+### Custom Payment Method
+
+```python
+@register_endpoint('custom_payment')
+class CustomPaymentEndpoint(EndpointInterface):
+    """Custom payment method endpoint"""
+    
+    @staticmethod
+    def supports_dcc() -> bool:
+        return True
+    
+    @staticmethod
+    def build_request(row, **kwargs):
+        # Custom request building logic
+        return build_custom_payment_request(row, **kwargs)
+```
+
+### Feature-Specific Endpoint
+
+```python
+@register_endpoint('loyalty_payment')  
+class LoyaltyPaymentEndpoint(EndpointInterface):
+    """Payment with loyalty points"""
+    
+    @staticmethod
+    def build_request(row, cards=None, loyalty_config=None, **kwargs):
+        request = build_create_payment_request(row, cards, **kwargs)
+        
+        # Add loyalty-specific logic
+        if pd.notna(row.get('loyalty_points')):
+            apply_loyalty_data(request, row, loyalty_config)
+        
+        return request
+```
+
+The Payment API Testing Framework provides a flexible, extensible architecture for testing complex payment scenarios. Follow these patterns to add new endpoints, features, and API property enhancements while maintaining consistency with the existing codebase.

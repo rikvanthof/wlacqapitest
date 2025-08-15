@@ -8,7 +8,7 @@ python -m src.main [OPTIONS]
 
 ## Description
 
-Execute payment API test chains with configurable parallelism, test files, and advanced filtering. Supports comprehensive payment features including Card-on-File, 3D Secure, Network Tokens, and Address Verification.
+Execute payment API test chains with configurable parallelism, test files, and advanced filtering. Supports comprehensive payment features including Card-on-File, 3D Secure, Network Tokens, Address Verification, SCA Exemptions, Merchant Data, Partial Operations, and Brand Selection.
 
 ## Options
 
@@ -34,6 +34,7 @@ python -m src.main --threads 10
 - `--threads N` = Parallel execution (up to N chains run simultaneously)
 - Steps within each chain always execute sequentially
 - Higher thread counts may hit API rate limits
+- Partial operations and SCA exemptions work correctly across all thread counts
 
 ### `--tests`, `-f`
 
@@ -56,7 +57,7 @@ python -m src.main --tests config/test_suites/regression.csv
 - Must be valid CSV with headers
 - Required columns: `chain_id`, `step_order`, `call_type`, `test_id`
 - Must be sorted by `chain_id` and `step_order`
-- Supports advanced payment features via optional columns
+- Supports advanced payment features and API properties via optional columns
 
 ### `--tags`
 
@@ -68,16 +69,32 @@ python -m src.main --tests config/test_suites/regression.csv
 # Run only Card-on-File tests
 python -m src.main --tags ucof
 
+# Run SCA exemption scenarios
+python -m src.main --tags sca
+
+# Run partial operations tests
+python -m src.main --tags partial
+
+# Run merchant data integration tests
+python -m src.main --tags merchant
+
+# Run brand selection tests
+python -m src.main --tags brand
+
 # Run 3D Secure and Network Token tests
 python -m src.main --tags 3ds,applepay
 
-# Multiple tag filtering
-python -m src.main --tags visa,mastercard,smoke
+# Multiple feature testing
+python -m src.main --tags sca,partial,merchant
 ```
 
 **Available Tags:**
 - `ucof` - Card-on-File scenarios
 - `3ds` - 3D Secure authentication
+- `sca` - SCA exemption scenarios (LOW_VALUE_PAYMENT, TRANSACTION_RISK_ANALYSIS, etc.)
+- `partial` - Partial operation tests (captures, reversals)
+- `merchant` - Merchant data integration tests
+- `brand` - Brand selection tests (CARDHOLDER/MERCHANT)
 - `avs` - Address verification
 - `applepay`, `googlepay` - Network token payments
 - `visa`, `mastercard` - Card brand specific
@@ -99,7 +116,8 @@ python -m src.main --verbose
 
 **Verbose Output Includes:**
 - Step-by-step chain execution progress
-- Advanced payment feature application (AVS, 3DS, etc.)
+- Advanced payment feature application (AVS, 3DS, SCA exemptions, merchant data)
+- API property enhancement details (partial operations, brand selection)
 - Detailed API call information
 - Request/response debugging details
 - Thread execution status
@@ -137,6 +155,18 @@ python -m src.main --tests ucof_tests.csv --verbose
 # Test only Card-on-File scenarios
 python -m src.main --tags ucof
 
+# Test SCA exemption scenarios
+python -m src.main --tags sca --verbose
+
+# Test partial operations
+python -m src.main --tags partial --verbose
+
+# Test merchant data integration
+python -m src.main --tags merchant
+
+# Test brand selection
+python -m src.main --tags brand
+
 # Test 3D Secure flows
 python -m src.main --tags 3ds --verbose
 
@@ -144,7 +174,26 @@ python -m src.main --tags 3ds --verbose
 python -m src.main --tags applepay,googlepay
 
 # Combined feature testing
-python -m src.main --tags ucof,3ds --threads 2
+python -m src.main --tags sca,partial,merchant --threads 2
+```
+
+### API Property Enhancement Testing
+
+```bash
+# Test SCA compliance scenarios
+python -m src.main --tags sca --verbose
+
+# Test partial capture workflows
+python -m src.main --tags partial --threads 2
+
+# Test merchant data across endpoints
+python -m src.main --tags merchant --verbose
+
+# Test brand selection control
+python -m src.main --tags brand
+
+# Combined API property testing
+python -m src.main --tags "partial,sca,brand" --threads 3
 ```
 
 ### Development & Debugging
@@ -155,6 +204,9 @@ python -m src.main --verbose
 
 # Debug specific payment features
 python -m src.main --tags avs --verbose
+
+# Debug new API properties
+python -m src.main --tags "sca,partial" --verbose --threads 1
 
 # Performance testing with high parallelism
 python -m src.main --tests load_test.csv --threads 8
@@ -169,8 +221,14 @@ python -m src.main --tests nightly_regression.csv --threads 5
 # Environment validation
 python -m src.main --tags smoke --threads 2
 
+# Compliance testing (SCA exemptions)
+python -m src.main --tags sca --threads 3
+
 # Card-on-File validation
 python -m src.main --tags ucof --threads 3
+
+# Partial operations validation
+python -m src.main --tags partial --threads 2
 ```
 
 ## Advanced Features
@@ -186,8 +244,10 @@ python -m src.main --tests payment_chains.csv --verbose
 
 **Chain Features:**
 - Initial Card-on-File followed by subsequent transactions
-- Authorization → Increment → Capture flows
+- Authorization → Increment → Capture flows with partial operations
 - Payment → Refund scenarios
+- Partial capture sequences with `isFinal` flag control
+- SCA exemption handling across chain steps
 - Automatic dependency tracking
 
 ### Payment Feature Support
@@ -199,11 +259,39 @@ python -m src.main --tags avs
 # Test 3D Secure authentication
 python -m src.main --tags 3ds
 
+# Test SCA exemption scenarios
+python -m src.main --tags sca
+
 # Test Apple Pay / Google Pay
 python -m src.main --tags applepay,googlepay
 
 # Test Card-on-File scenarios
 python -m src.main --tags ucof
+
+# Test partial operations
+python -m src.main --tags partial
+
+# Test merchant data integration
+python -m src.main --tags merchant
+
+# Test brand selection
+python -m src.main --tags brand
+```
+
+### API Property Enhancement Support
+
+```bash
+# Test partial capture workflows
+python -m src.main --tags partial --verbose
+
+# Test SCA compliance
+python -m src.main --tags sca --verbose
+
+# Test merchant data across endpoints
+python -m src.main --tags merchant --verbose
+
+# Test brand selection control
+python -m src.main --tags brand --verbose
 ```
 
 ## Exit Codes
@@ -246,8 +334,9 @@ Every execution creates/updates:
 |------|---------|
 | `address.csv` | AVS test addresses |
 | `networktokens.csv` | Apple Pay/Google Pay tokens |
-| `threeddata.csv` | 3D Secure test data |
+| `threeddata.csv` | 3D Secure test data & SCA exemptions |
 | `cardonfile.csv` | Card-on-File configurations |
+| `merchantdata.csv` | Merchant information data |
 
 ## Performance Considerations
 
@@ -260,12 +349,15 @@ Every execution creates/updates:
 | Regression Testing | 3-5 | Balanced speed/stability |
 | Load Testing | 5-10 | Maximum throughput |
 | Card-on-File Testing | 2-3 | Chain dependencies require careful timing |
+| Partial Operations Testing | 2-4 | Sequence dependencies need coordination |
+| SCA Exemption Testing | 3-5 | Independent exemption scenarios |
 
 ### Memory Usage
 
 - Each thread requires ~10-50MB depending on test complexity
 - Large test files increase memory usage regardless of thread count
-- Advanced payment features (3DS, Network Tokens) may increase memory usage
+- Advanced payment features (3DS, Network Tokens, SCA exemptions) may increase memory usage
+- API property enhancements (partial operations, merchant data) add minimal overhead
 - Monitor system resources when using high thread counts
 
 ### API Rate Limits
@@ -275,6 +367,7 @@ Every execution creates/updates:
 - Use `--verbose` to monitor for HTTP 429 responses
 - Reduce thread count if rate limiting occurs
 - Card-on-File testing may have additional rate considerations
+- Partial operations and SCA exemptions respect API rate limits
 
 ## Troubleshooting
 
@@ -297,6 +390,17 @@ python -m src.main --threads 1 --verbose
 # Test individual features
 python -m src.main --tags 3ds --verbose
 python -m src.main --tags ucof --verbose
+python -m src.main --tags sca --verbose
+python -m src.main --tags partial --verbose
+python -m src.main --tags merchant --verbose
+python -m src.main --tags brand --verbose
+```
+
+**API Property Issues:**
+```bash
+# Test specific API properties
+python -m src.main --tags "partial,sca" --threads 1 --verbose
+python -m src.main --tags "merchant,brand" --verbose
 ```
 
 ### Debug Mode
@@ -310,4 +414,40 @@ This enables:
 - Detailed request/response logging
 - Step-by-step execution tracking
 - Advanced payment feature application logs
+- API property enhancement details
 - Chain dependency resolution details
+- SCA exemption application logs
+- Merchant data integration details
+- Partial operation sequence tracking
+
+### Feature-Specific Debugging
+
+```bash
+# Debug SCA exemption scenarios
+python -m src.main --tags sca --verbose --threads 1
+
+# Debug partial operations
+python -m src.main --tags partial --verbose --threads 1
+
+# Debug merchant data integration
+python -m src.main --tags merchant --verbose
+
+# Debug brand selection
+python -m src.main --tags brand --verbose
+
+# Debug combined features
+python -m src.main --tags "sca,partial,merchant" --verbose --threads 1
+```
+```
+
+**Key Updates Made:**
+1. ✅ **Added new tags**: `sca`, `partial`, `merchant`, `brand`
+2. ✅ **Added merchantdata.csv** to optional configuration files
+3. ✅ **Updated examples** with v2.2.0 features
+4. ✅ **Enhanced verbose output** description
+5. ✅ **Added API property enhancement sections**
+6. ✅ **Updated troubleshooting** with new feature debugging
+7. ✅ **Enhanced performance considerations** for new features
+8. ✅ **Updated thread recommendations** for new test types
+
+The CLI reference now fully reflects all v2.2.0 capabilities! 🚀
