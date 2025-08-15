@@ -29,7 +29,8 @@ from .api_calls import (
     reverse_refund_authorization_call, 
     ping_call, 
     technical_reversal_call,
-    account_verification_call
+    account_verification_call,
+    balance_inquiry_call
 )
 from .results_handler import create_success_result, create_error_result, create_dependency_error_result, save_results
 from .response_utils import update_previous_outputs, get_card_description

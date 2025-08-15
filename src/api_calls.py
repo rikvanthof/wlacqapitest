@@ -9,6 +9,7 @@ from worldline.acquiring.sdk.v1.domain.api_refund_request import ApiRefundReques
 from worldline.acquiring.sdk.v1.domain.api_capture_request_for_refund import ApiCaptureRequestForRefund
 from worldline.acquiring.sdk.v1.domain.api_refund_reversal_request import ApiRefundReversalRequest
 from worldline.acquiring.sdk.v1.domain.api_account_verification_request import ApiAccountVerificationRequest
+from worldline.acquiring.sdk.v1.domain.api_balance_inquiry_request import ApiBalanceInquiryRequest
 
 from worldline.acquiring.sdk.v1.domain.amount_data import AmountData
 
@@ -417,4 +418,15 @@ def account_verification_call(client, acquirer_id, merchant_id, request):
         return response
     except Exception as e:
         logger.error(f"Account verification failed - Error: {e}")
+        raise
+
+def balance_inquiry_call(client, acquirer_id, merchant_id, request):
+    """Execute balance inquiry API call"""
+    try:
+        logger.info(f"Executing balance inquiry - Acquirer: {acquirer_id}")
+        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).balance_inquiries().create(request)
+        logger.info(f"Balance inquiry successful - Operation ID: {getattr(request, 'operation_id', 'unknown')}")
+        return response
+    except Exception as e:
+        logger.error(f"Balance inquiry failed - Error: {e}")
         raise

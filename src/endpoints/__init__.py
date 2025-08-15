@@ -14,7 +14,8 @@ from . import (
     reverse_refund_authorization_endpoint,
     ping_endpoint,
     technical_reversal_endpoint,
-    account_verification_endpoint
+    account_verification_endpoint,
+    balance_inquiry_endpoint
 )
 
 __all__ = [
@@ -30,5 +31,6 @@ __all__ = [
     'reverse_refund_authorization_endpoint',
     'ping_endpoint',
     'technical_reversal_endpoint',
-    'account_verification_endpoint'
+    'account_verification_endpoint',
+    'balance_inquiry_endpoint'
 ]
