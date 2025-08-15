@@ -4,6 +4,7 @@ import time
 import argparse
 import pandas as pd
 import concurrent.futures
+import logging  # ✅ ADD: Missing import
 from threading import Lock
 from worldline.acquiring.sdk.factory import Factory
 from .core.endpoint_registry import EndpointRegistry
@@ -24,7 +25,11 @@ from .request_builders import (
     build_get_refund_request
 )
 
-# Import logging configuration
+# ✅ NEW: Import DCC components
+from .core.dcc_manager import DCCManager, perform_dcc_inquiry
+from .endpoints.get_dcc_rate_endpoint import build_get_dcc_rate_request, get_dcc_rate
+
+# Import logging configuration (EXISTING)
 from .logging_config import (
     setup_logging, 
     get_main_logger,
@@ -34,10 +39,21 @@ from .logging_config import (
     log_performance_summary
 )
 
-
-
 # Thread-safe result collection
 results_lock = Lock()
+
+# ✅ REMOVE: Delete the duplicate logging functions I added
+# (get_main_logger, log_chain_start, log_chain_complete, log_chain_progress, log_api_call)
+# These are already imported from logging_config above
+
+# ✅ ADD: Missing log functions that aren't in logging_config
+def log_chain_start(logger, chain_id):
+    """Log chain start"""
+    logger.info(f"[{chain_id}] Starting chain execution")
+
+def log_chain_complete(logger, chain_id, steps_count):
+    """Log chain completion"""
+    logger.info(f"[{chain_id}] Completed chain execution ({steps_count} steps)")
 
 def parse_arguments():
     """Enhanced argument parsing with tag support"""
@@ -52,6 +68,7 @@ Examples:
   python -m src.main --tags "smoke,visa"                  # Only tests with smoke AND visa tags
   python -m src.main --include-tags smoke --include-tags visa  # Tests with smoke OR visa
   python -m src.main --exclude-tags slow                  # Exclude tests with slow tag
+  python -m src.main --tags dcc                           # Run DCC tests only
   python -m src.main --list-test-suites                   # Show available test suites
   python -m src.main --list-tags                          # Show all available tags
   python test_runner.py --log-level DEBUG --log-file      # Debug logging to file
@@ -69,8 +86,8 @@ Examples:
     parser.add_argument(
         '--tests', '-f',
         type=str,
-        default='smoke_tests.csv',  # ✅ NEW: Points to test_suites directory
-        help='Path to the test CSV file (default: smoke_tests.csv)'  # ✅ NEW: Updated help
+        default='smoke_tests.csv',
+        help='Path to the test CSV file (default: smoke_tests.csv)'
     )
     
     parser.add_argument(
@@ -197,12 +214,192 @@ def build_api_call_args(call_type, client, merchant_info, previous_outputs, requ
     logger.debug(f"Built API args for {call_type}: {len(base_args)} arguments")
     return base_args
 
-def process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, cardonfile, previous_outputs, chain_id, step_num, total_steps, verbose=False):
-    """Process a single test step using registry"""
+def perform_dcc_inquiry(row, call_type, client, merchant_info, dcc_manager, chain_id, verbose=False):
+    """✅ NEW: Perform DCC rate inquiry if needed"""
+    logger = get_main_logger()
+    
+    # Check if DCC is enabled for this step
+    if not dcc_manager.should_perform_dcc_inquiry(row):
+        return None
+    
+    try:
+        # Determine transaction type based on call type
+        transaction_type = dcc_manager.determine_transaction_type(call_type)
+        
+        # Get existing rate reference ID for this chain
+        chain_context = dcc_manager.get_chain_context(chain_id)
+        existing_rate_ref = chain_context.rate_reference_id
+        
+        if verbose:
+            print(f"[{chain_id}] Performing DCC inquiry for {transaction_type} (existing rate: {existing_rate_ref})")
+        
+        logger.info(f"[{chain_id}] DCC inquiry: {transaction_type}, rate_ref: {existing_rate_ref}")
+        
+        # Build DCC request
+        dcc_request = build_get_dcc_rate_request(row, transaction_type, existing_rate_ref)
+        
+        # Execute DCC API call
+        start_time = time.time()
+        dcc_response = get_dcc_rate(
+            client, merchant_info['acquirer_id'], 
+            merchant_info['merchant_id'], dcc_request
+        )
+        dcc_duration = (time.time() - start_time) * 1000
+        
+        # Update DCC context with response
+        dcc_manager.update_context_from_dcc_response(chain_id, dcc_response)
+        
+        # Log successful DCC inquiry
+        log_api_call(logger, 'get_dcc_rate', row['test_id'], chain_id, dcc_duration, success=True)
+        
+        if verbose:
+            updated_context = dcc_manager.get_chain_context(chain_id)
+            print(f"[{chain_id}] DCC inquiry successful, rate ID: {updated_context.rate_reference_id}")
+        
+        logger.info(f"[{chain_id}] DCC inquiry successful, rate ID: {dcc_manager.get_chain_context(chain_id).rate_reference_id}")
+        
+        # Return DCC result for logging (optional)
+        return {
+            'call_type': 'get_dcc_rate',
+            'test_id': row['test_id'],
+            'duration_ms': dcc_duration,
+            'success': True,
+            'response': dcc_response.to_dictionary() if hasattr(dcc_response, 'to_dictionary') else str(dcc_response)
+        }
+        
+    except Exception as e:
+        # Log failed DCC inquiry
+        log_api_call(logger, 'get_dcc_rate', row['test_id'], chain_id, 0, success=False, error=str(e))
+        
+        if verbose:
+            print(f"[{chain_id}] DCC inquiry failed: {e}")
+        
+        logger.error(f"[{chain_id}] DCC inquiry failed: {e}")
+        
+        # Fail the entire chain as requested
+        raise Exception(f"DCC inquiry failed for {call_type}: {e}")
+
+def perform_dcc_inquiry(row, call_type, client, merchant_info, dcc_manager, chain_id, verbose=False):
+    """✅ NEW: Perform DCC rate inquiry if needed"""
+    logger = get_main_logger()
+    
+    # Check if DCC is enabled for this step
+    if not dcc_manager.should_perform_dcc_inquiry(row):
+        return None
+    
+    try:
+        # Determine transaction type based on call type
+        transaction_type = dcc_manager.determine_transaction_type(call_type)
+        
+        # Get existing rate reference ID for this chain
+        chain_context = dcc_manager.get_chain_context(chain_id)
+        existing_rate_ref = chain_context.rate_reference_id
+        
+        if verbose:
+            print(f"[{chain_id}] Performing DCC inquiry for {transaction_type} (existing rate: {existing_rate_ref})")
+        
+        logger.info(f"[{chain_id}] DCC inquiry: {transaction_type}, rate_ref: {existing_rate_ref}")
+        
+        # Build DCC request with cards data
+        dcc_request = build_get_dcc_rate_request(row, transaction_type, existing_rate_ref, cards=None)  # We'll fix this
+        
+        # Execute DCC API call
+        start_time = time.time()
+        dcc_response = get_dcc_rate(
+            client, merchant_info['acquirer_id'], 
+            merchant_info['merchant_id'], dcc_request
+        )
+        dcc_duration = (time.time() - start_time) * 1000
+        
+        # Update DCC context with response
+        dcc_manager.update_context_from_dcc_response(chain_id, dcc_response)
+        
+        # Log successful DCC inquiry
+        log_api_call(logger, 'get_dcc_rate', row['test_id'], chain_id, dcc_duration, success=True)
+        
+        if verbose:
+            updated_context = dcc_manager.get_chain_context(chain_id)
+            print(f"[{chain_id}] DCC inquiry successful, rate ID: {updated_context.rate_reference_id}")
+        
+        logger.info(f"[{chain_id}] DCC inquiry successful, rate ID: {dcc_manager.get_chain_context(chain_id).rate_reference_id}")
+        
+        return dcc_response
+        
+    except Exception as e:
+        # Log failed DCC inquiry
+        log_api_call(logger, 'get_dcc_rate', row['test_id'], chain_id, 0, success=False, error=str(e))
+        
+        if verbose:
+            print(f"[{chain_id}] DCC inquiry failed: {e}")
+        
+        logger.error(f"[{chain_id}] DCC inquiry failed: {e}")
+        
+        # Fail the entire chain as requested
+        raise Exception(f"DCC inquiry failed for {call_type}: {e}")
+
+# ✅ ADD: DCC inquiry function that accepts cards
+def perform_dcc_inquiry_with_cards(row, call_type, client, merchant_info, cards, dcc_manager, chain_id, verbose=False):
+    """Perform DCC rate inquiry with cards data"""
+    logger = get_main_logger()
+    
+    # Check if DCC is enabled for this step
+    if not dcc_manager.should_perform_dcc_inquiry(row):
+        return None
+    
+    try:
+        # Determine transaction type based on call type
+        transaction_type = dcc_manager.determine_transaction_type(call_type)
+        
+        # Get existing rate reference ID for this chain
+        chain_context = dcc_manager.get_chain_context(chain_id)
+        existing_rate_ref = chain_context.rate_reference_id
+        
+        if verbose:
+            print(f"[{chain_id}] Performing DCC inquiry for {transaction_type} (existing rate: {existing_rate_ref})")
+        
+        logger.info(f"[{chain_id}] DCC inquiry: {transaction_type}, rate_ref: {existing_rate_ref}")
+        
+        # ✅ FIX: Build DCC request WITH cards data
+        dcc_request = build_get_dcc_rate_request(row, transaction_type, existing_rate_ref, cards=cards)
+        
+        # Execute DCC API call
+        start_time = time.time()
+        dcc_response = get_dcc_rate(
+            client, merchant_info['acquirer_id'], 
+            merchant_info['merchant_id'], dcc_request
+        )
+        dcc_duration = (time.time() - start_time) * 1000
+        
+        # Update DCC context with response
+        dcc_manager.update_context_from_dcc_response(chain_id, dcc_response)
+        
+        # Log successful DCC inquiry using existing function
+        log_api_call(logger, 'get_dcc_rate', row['test_id'], chain_id, dcc_duration, success=True)
+        
+        if verbose:
+            updated_context = dcc_manager.get_chain_context(chain_id)
+            print(f"[{chain_id}] DCC inquiry successful, rate ID: {updated_context.rate_reference_id}")
+        
+        return dcc_response
+        
+    except Exception as e:
+        # Log failed DCC inquiry using existing function
+        log_api_call(logger, 'get_dcc_rate', row['test_id'], chain_id, 0, success=False, error=str(e))
+        
+        if verbose:
+            print(f"[{chain_id}] DCC inquiry failed: {e}")
+        
+        logger.error(f"[{chain_id}] DCC inquiry failed: {e}")
+        
+        # Fail the entire chain as requested
+
+# ✅ UPDATE: Fix DCC inquiry call to pass cards
+def process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, cardonfile, previous_outputs, chain_id, step_num, total_steps, dcc_manager=None, verbose=False):
+    """✅ Enhanced: Process a single test step with DCC support using existing registry pattern"""
     logger = get_main_logger()
     test_id = row['test_id']
     
-    # Log progress
+    # Log progress using existing function
     log_chain_progress(logger, chain_id, step_num, total_steps, test_id, call_type)
     
     if verbose:
@@ -224,18 +421,46 @@ def process_test_step(row, call_type, client, merchant_info, cards, address, net
         print(f"[{chain_id}] {dependency_error}")
         return create_dependency_error_result(chain_id, row, call_type, dependency_error)
     
-    # Build request using registry
-    request = None
-    try:
-        if call_type == 'create_payment':
-            request = endpoint.build_request(row, cards, address, networktokens, threeds, cardonfile, previous_outputs)
-        else:
-            request = endpoint.build_request(row)
-        logger.debug(f"[{chain_id}] Request built successfully")
-    except Exception as e:
-        logger.error(f"[{chain_id}] Request building failed: {e}")
-        print(f"[{chain_id}] Request building failed: {e}")
-        return create_dependency_error_result(chain_id, row, call_type, f"Request building failed: {e}")
+    # ✅ NEW: Perform DCC inquiry if needed (WITH CARDS DATA)
+    dcc_context = None
+    if dcc_manager:
+        try:
+            # ✅ FIX: Create a modified perform_dcc_inquiry that accepts cards
+            dcc_result = perform_dcc_inquiry_with_cards(row, call_type, client, merchant_info, cards, dcc_manager, chain_id, verbose)
+            dcc_context = dcc_manager.get_chain_context(chain_id)
+        except Exception as e:
+            # DCC inquiry failed - fail the entire chain
+            logger.error(f"[{chain_id}] DCC inquiry failed, stopping chain: {e}")
+            print(f"[{chain_id}] DCC inquiry failed, stopping chain: {e}")
+            card_description = get_card_description(call_type, cards, row.get('card_id'))
+            return create_error_result(
+                chain_id, row, f"dcc_inquiry_{call_type}", e, 0,
+                merchant_info['merchant_description'], previous_outputs, None, card_description
+            )
+    
+        # ✅ Enhanced: Build request using registry with DCC context
+        request = None
+        try:
+            if call_type == 'create_payment':
+                # Create payment uses the full signature with DCC
+                if dcc_context and endpoint.supports_dcc():
+                    request = endpoint.build_request_with_dcc(row, dcc_context, cards, address, networktokens, threeds, cardonfile, previous_outputs)
+                else:
+                    request = endpoint.build_request(row, cards, address, networktokens, threeds, cardonfile, previous_outputs)
+            elif call_type in ['increment_payment', 'capture_payment', 'refund_payment']:
+                # ✅ FIXED: Use DCC-aware request building for payment operations
+                if dcc_context and endpoint.supports_dcc():
+                    request = endpoint.build_request_with_dcc(row, dcc_context)  # Pass DCC context
+                else:
+                    request = endpoint.build_request(row)
+            else:
+                # GET operations and other endpoints don't need DCC
+                request = endpoint.build_request(row)
+            logger.debug(f"[{chain_id}] Request built successfully")
+        except Exception as e:
+            logger.error(f"[{chain_id}] Request building failed: {e}")
+            print(f"[{chain_id}] Request building failed: {e}")
+            return create_dependency_error_result(chain_id, row, call_type, f"Request building failed: {e}")
     
     # Build API call arguments using registry
     args = build_api_call_args(call_type, client, merchant_info, previous_outputs, request)
@@ -275,40 +500,35 @@ def process_test_step(row, call_type, client, merchant_info, cards, address, net
         )
 
 def run_test_chain(chain_id, group, environments, merchants, cards, address, networktokens, threeds, cardonfile, verbose=False):
-    """Run all steps in a test chain (sequential within chain)"""
+    """✅ Enhanced: Run all steps in a test chain with DCC support"""
     logger = get_main_logger()
-    
-    logger.info(f"[{chain_id}] Starting chain execution")
+    log_chain_start(logger, chain_id)
     print(f"[{chain_id}] Starting chain execution")
     results = []
     previous_outputs = {}
-    total_steps = len(group)
+    
+    # ✅ NEW: Create DCC manager for this chain
+    dcc_manager = DCCManager()
     
     # Get environment configuration
     env = group['env'].iloc[0]
     if env not in environments.index:
-        error_msg = f"Environment {env} not defined in environments.csv"
-        logger.error(f"[{chain_id}] {error_msg}")
-        raise ValueError(error_msg)
+        raise ValueError(f"Environment {env} not defined in environments.csv")
     
     env_data = environments.loc[env]
     temp_config = create_temp_config(env_data)
-    logger.debug(f"[{chain_id}] Using environment: {env}")
     
     # Execute all steps in the chain sequentially
     with Factory.create_client_from_file(temp_config, env_data['client_id'], env_data['client_secret']) as client:
-        logger.debug(f"[{chain_id}] API client created successfully")
-        
         for step_num, (_, row) in enumerate(group.iterrows(), 1):
             call_type = row['call_type']
+            total_steps = len(group)
             
             # Validate call type
             endpoint = EndpointRegistry.get_endpoint(call_type)
             if not endpoint:
                 available_endpoints = list(EndpointRegistry.get_all_endpoints().keys())
                 raise ValueError(f"Unknown call_type: {call_type}. Available: {available_endpoints}")
-                logger.error(f"[{chain_id}] {error_msg}")
-                raise ValueError(error_msg)
             
             # Get merchant information
             try:
@@ -318,11 +538,14 @@ def run_test_chain(chain_id, group, environments, merchants, cards, address, net
                 print(f"[{chain_id}] Merchant configuration error: {e}")
                 continue
             
-            # Process the test step
-            result = process_test_step(row, call_type, client, merchant_info, cards, address, networktokens, threeds, cardonfile, previous_outputs, chain_id, step_num, total_steps, verbose)
+            # ✅ Enhanced: Process the test step with DCC support
+            result = process_test_step(
+                row, call_type, client, merchant_info, cards, address, networktokens, threeds, cardonfile,
+                previous_outputs, chain_id, step_num, total_steps, dcc_manager, verbose
+            )
             results.append(result)
     
-    logger.info(f"[{chain_id}] Completed chain execution ({len(results)} steps)")
+    log_chain_complete(logger, chain_id, len(results))
     print(f"[{chain_id}] Completed chain execution ({len(results)} steps)")
     return results
 

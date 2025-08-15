@@ -37,6 +37,17 @@ class EndpointInterface(ABC):
     def get_output_keys() -> List[str]:
         """What keys this endpoint adds to previous_outputs (e.g., ['payment_id'])"""
         pass
+    
+    @staticmethod
+    def supports_dcc() -> bool:
+        """✅ NEW: Whether this endpoint supports DCC (override if needed)"""
+        return False
+    
+    @staticmethod
+    def build_request_with_dcc(row, dcc_context=None, *args, **kwargs):
+        """✅ NEW: Build request with DCC context (override if DCC is supported)"""
+        # Default implementation falls back to regular build_request
+        return EndpointInterface.build_request(row, *args, **kwargs)
 
 class EndpointRegistry:
     """Registry for automatic endpoint discovery and management"""
@@ -79,7 +90,7 @@ class EndpointRegistry:
     
     @classmethod
     def auto_discover(cls):
-        """Auto-discover endpoints in the endpoints package"""
+        """✅ Enhanced: Auto-discover endpoints including DCC"""
         try:
             # Import all endpoint modules
             from ..endpoints import (
@@ -88,7 +99,8 @@ class EndpointRegistry:
                 capture_payment_endpoint,
                 refund_payment_endpoint,
                 get_payment_endpoint,
-                get_refund_endpoint
+                get_refund_endpoint,
+                get_dcc_rate_endpoint  # ✅ NEW: Import DCC endpoint
             )
             cls._initialized = True
         except ImportError as e:
@@ -104,6 +116,12 @@ class EndpointRegistry:
                 raise ValueError(f"Endpoint {call_type} missing required method: {method}")
         
         return True
+    
+    @classmethod
+    def endpoint_supports_dcc(cls, call_type: str) -> bool:
+        """✅ NEW: Check if endpoint supports DCC"""
+        endpoint = cls.get_endpoint(call_type)
+        return endpoint and hasattr(endpoint, 'supports_dcc') and endpoint.supports_dcc()
 
 # Decorator for easy registration
 def register_endpoint(call_type: str):

@@ -55,3 +55,6 @@ htmlcov/
 # Build outputs
 dist/
 build/*.backup
+
+# Debug and development tools
+debug/

@@ -1,2 +1,0 @@
-chain_id,step_order,call_type,test_id,card_id,merchant_id,env,amount,currency,authorization_type,allow_partial_approval,capture_immediately,card_entry_mode,cardholder_verification_method,dynamic_descriptor
-test_registry,1,create_payment,TEST_REG_001,card1,merchant1,test,100,GBP,PRE_AUTHORIZATION,TRUE,FALSE,ECOMMERCE,CARD_SECURITY_CODE,Test Registry

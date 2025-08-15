@@ -6,15 +6,36 @@ from worldline.acquiring.sdk.v1.domain.amount_data import AmountData
 from worldline.acquiring.sdk.v1.domain.card_payment_data import CardPaymentData
 from worldline.acquiring.sdk.v1.domain.plain_card_data import PlainCardData
 from worldline.acquiring.sdk.v1.domain.payment_references import PaymentReferences
+from worldline.acquiring.sdk.v1.domain.dcc_data import DccData  # ✅ NEW IMPORT
 
 from ..utils import generate_random_string, clean_request
 from ..avs import apply_avs_data
 from ..network_token import apply_network_token_data
 from ..threed_secure import apply_threed_secure_data
-from ..cardonfile import apply_cardonfile_data  # ← NEW IMPORT
+from ..cardonfile import apply_cardonfile_data
+from ..core.dcc_manager import DCCContext  # ✅ NEW IMPORT
 
-def build_create_payment_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, previous_outputs=None):
-    """Build ApiPaymentRequest for create_payment calls with full feature support"""
+def apply_dcc_data(request, dcc_context, row):
+    """Apply DCC (Dynamic Currency Conversion) data to payment request"""
+    if not dcc_context or not dcc_context.rate_reference_id:
+        return request
+    
+    # Create dynamic currency conversion data object
+    dcc_data = DccData()
+    
+    # ✅ Use correct DccData field names from SDK
+    dcc_data.amount = int(row['amount'])         # Original merchant amount
+    dcc_data.currency_code = row['currency']     # Original merchant currency
+    dcc_data.number_of_decimals = 2
+    dcc_data.conversion_rate = dcc_context.inverted_exchange_rate
+    
+    # ✅ Apply to request root level (not cardPaymentData)
+    request.dynamic_currency_conversion = dcc_data
+    
+    return request
+
+def build_create_payment_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, previous_outputs=None, dcc_context=None):
+    """Build ApiPaymentRequest for create_payment calls with full feature support including DCC"""
     card_row = cards.loc[row['card_id']]
     request = ApiPaymentRequest()
     
@@ -42,7 +63,7 @@ def build_create_payment_request(row, cards, address=None, networktokens=None, t
     if pd.notna(row.get('cardholder_verification_method')):
         card_payment_data.cardholder_verification_method = row['cardholder_verification_method']
     
-    # Set card payment data on request first (needed for network tokens)
+    # Set card payment data on request first (needed for network tokens and DCC)
     request.card_payment_data = card_payment_data
     
     # Add AVS data if specified
@@ -61,6 +82,10 @@ def build_create_payment_request(row, cards, address=None, networktokens=None, t
     if pd.notna(row.get('card_on_file_data')) and cardonfile is not None:
         apply_cardonfile_data(request, row, cardonfile, previous_outputs)
     
+    # ✅ Add DCC data if available
+    if dcc_context and dcc_context.inverted_exchange_rate:
+        apply_dcc_data(request, dcc_context, row)
+    
     # Create References object first
     references = PaymentReferences()
     
@@ -70,12 +95,21 @@ def build_create_payment_request(row, cards, address=None, networktokens=None, t
     if pd.notna(row.get('dynamic_descriptor')):
         references.dynamic_descriptor = row['dynamic_descriptor']
     
-    # Set amount
-    amount_data = AmountData()
-    amount_data.amount = int(row['amount'])
-    amount_data.currency_code = row['currency']
-    amount_data.number_of_decimals = 2
-    request.amount = amount_data
+    # ✅ Set amount - use DCC resulting amount if available, otherwise test amount
+    if dcc_context and dcc_context.resulting_amount:
+        # Use DCC resulting amount (customer currency amount)
+        amount_data = AmountData()
+        amount_data.amount = dcc_context.resulting_amount['amount']
+        amount_data.currency_code = dcc_context.resulting_amount['currency_code']
+        amount_data.number_of_decimals = dcc_context.resulting_amount['number_of_decimals']
+        request.amount = amount_data
+    else:
+        # Use test amount (merchant currency)
+        amount_data = AmountData()
+        amount_data.amount = int(row['amount'])
+        amount_data.currency_code = row['currency']
+        amount_data.number_of_decimals = 2
+        request.amount = amount_data
     
     # Set operation ID and timestamp
     request.operation_id = row['test_id'] + ':' + generate_random_string(40-(len(row['test_id'])+1))
