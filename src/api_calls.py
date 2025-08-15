@@ -4,6 +4,8 @@ from worldline.acquiring.sdk.v1.domain.api_payment_request import ApiPaymentRequ
 from worldline.acquiring.sdk.v1.domain.api_increment_request import ApiIncrementRequest
 from worldline.acquiring.sdk.v1.domain.api_capture_request import ApiCaptureRequest
 from worldline.acquiring.sdk.v1.domain.api_payment_refund_request import ApiPaymentRefundRequest
+from worldline.acquiring.sdk.v1.domain.api_payment_reversal_request import ApiPaymentReversalRequest
+from worldline.acquiring.sdk.v1.domain.amount_data import AmountData
 import threading
 import uuid
 import logging
@@ -332,4 +334,15 @@ def get_refund(client, acquirer_id, merchant_id, refund_id):
         
     except Exception as e:
         logger.error(f"Refund retrieval failed - Refund: {refund_id}, Trace: {trace_id}, Error: {e}")
+        raise
+
+def reverse_authorization_call(client, acquirer_id, merchant_id, payment_id, request):
+    """Execute reverse authorization API call"""
+    try:
+        logger.info(f"Executing reverse authorization - Acquirer: {acquirer_id}, Payment: {payment_id}")
+        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).payments(payment_id).authorization_reversals().create(request)
+        logger.info(f"Reverse authorization successful - Payment: {payment_id}")
+        return response
+    except Exception as e:
+        logger.error(f"Reverse authorization failed - Payment: {payment_id}, Error: {e}")
         raise
