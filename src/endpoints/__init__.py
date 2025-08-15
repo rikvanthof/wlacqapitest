@@ -8,7 +8,8 @@ from . import (
     refund_payment_endpoint,
     get_payment_endpoint,
     get_refund_endpoint,
-    reverse_authorization_endpoint
+    reverse_authorization_endpoint,
+    standalone_refund_endpoint
 )
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     'refund_payment_endpoint',
     'get_payment_endpoint',
     'get_refund_endpoint',
-    'reverse_authorization_endpoint'
+    'reverse_authorization_endpoint',
+    'standalone_refund_endpoint'
 ]
