@@ -383,3 +383,14 @@ def reverse_refund_authorization_call(client, acquirer_id, merchant_id, refund_i
     except Exception as e:
         logger.error(f"Reverse refund authorization failed - Refund: {refund_id}, Error: {e}")
         raise
+    
+def ping_call(client):
+    """Execute ping API call - simplest possible!"""
+    try:
+        logger.info("Executing ping - testing API connectivity")
+        response = client.v1().ping()
+        logger.info("Ping successful - API is reachable")
+        return response
+    except Exception as e:
+        logger.error(f"Ping failed - API connectivity issue: {e}")
+        raise
