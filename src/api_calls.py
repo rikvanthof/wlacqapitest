@@ -6,6 +6,7 @@ from worldline.acquiring.sdk.v1.domain.api_capture_request import ApiCaptureRequ
 from worldline.acquiring.sdk.v1.domain.api_payment_refund_request import ApiPaymentRefundRequest
 from worldline.acquiring.sdk.v1.domain.api_payment_reversal_request import ApiPaymentReversalRequest
 from worldline.acquiring.sdk.v1.domain.api_refund_request import ApiRefundRequest
+from worldline.acquiring.sdk.v1.domain.api_capture_request_for_refund import ApiCaptureRequestForRefund
 from worldline.acquiring.sdk.v1.domain.amount_data import AmountData
 
 import threading
@@ -358,4 +359,15 @@ def standalone_refund_call(client, acquirer_id, merchant_id, request):
         return response
     except Exception as e:
         logger.error(f"Standalone refund failed - Error: {e}")
+        raise
+
+def capture_refund_call(client, acquirer_id, merchant_id, refund_id, request):
+    """Execute capture refund API call"""
+    try:
+        logger.info(f"Executing capture refund - Acquirer: {acquirer_id}, Refund: {refund_id}")
+        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).refunds(refund_id).captures().create(request)
+        logger.info(f"Capture refund successful - Refund: {refund_id}")
+        return response
+    except Exception as e:
+        logger.error(f"Capture refund failed - Refund: {refund_id}, Error: {e}")
         raise
