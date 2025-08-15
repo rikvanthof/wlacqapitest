@@ -1,0 +1,1644 @@
+# Web GUI, External Data Integration & Chain State Management
+## Technical Specification Document v3.0.0
+
+### Document Information
+- **Version**: 3.0.0
+- **Created**: August 15, 2025
+- **Target Release**: v3.0.0
+- **Estimated Timeline**: 8-12 weeks
+- **Authors**: Development Team
+- **Status**: Planning Phase
+
+---
+
+## 📋 **Executive Summary**
+
+This specification outlines the next major evolution of the Payment API Testing Framework, transforming it from a CLI-based testing tool into a comprehensive web-based payment ecosystem monitoring and validation platform. The enhancement adds four major capabilities:
+
+1. **Web-Based GUI**: Modern React interface for test management and execution
+2. **External Data Integration**: CSV/XML upload and correlation with test results  
+3. **Chain State Management**: Persistent chain state with delayed/scheduled execution
+4. **End-to-End Reporting**: Combined analysis across all data sources
+
+**Business Value**: Complete payment ecosystem visibility from API calls through backend processing to final settlement and notifications.
+
+---
+
+## 🎯 **Project Goals & Success Criteria**
+
+### Primary Goals
+- ✅ **Accessibility**: Enable non-technical users to create and manage payment tests
+- ✅ **Visibility**: Provide end-to-end payment journey monitoring
+- ✅ **Real-World Testing**: Support actual payment timing patterns and async processing
+- ✅ **Integration**: Correlate framework results with external system data
+- ✅ **Scalability**: Foundation for enterprise-level payment testing and monitoring
+
+### Success Criteria
+- [ ] Non-technical users can create test scenarios without CSV editing
+- [ ] External data uploads process and correlate with 95%+ accuracy
+- [ ] Chain state persistence survives system restarts and continues correctly
+- [ ] Web interface handles 50+ concurrent users
+- [ ] End-to-end reports provide actionable business insights
+- [ ] API performance matches current CLI framework (< 5% overhead)
+
+---
+
+## 🏗️ **System Architecture Overview**
+
+### High-Level Architecture
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Web Browser (React)                        │
+├─────────────────────────────────────────────────────────────────┤
+│                     FastAPI Backend                            │
+│  ┌─────────────────┬────────────────┬──────────────────────────┐ │
+│  │   Web API       │  File Upload   │    Chain Scheduler       │ │
+│  │   Endpoints     │   Processor    │      Service             │ │
+│  └─────────────────┴────────────────┴──────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────┤
+│                Existing Framework Core                         │
+│  ┌─────────────────┬────────────────┬──────────────────────────┐ │
+│  │ Configuration   │   Execution    │     Result               │ │
+│  │   Manager       │    Engine      │    Handler               │ │
+│  └─────────────────┴────────────────┴──────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────┤
+│              Enhanced Data Layer                                │
+│  ┌─────────────────┬────────────────┬──────────────────────────┐ │
+│  │   PostgreSQL    │   File Store   │   Redis Cache            │ │
+│  │   (Primary)     │   (Uploads)    │   (Sessions/Jobs)        │ │
+│  └─────────────────┴────────────────┴──────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Technology Stack
+- **Frontend**: React 18+ with TypeScript, Material-UI/Ant Design
+- **Backend**: FastAPI with Python 3.9+, SQLAlchemy, Celery
+- **Database**: PostgreSQL 14+ (primary), Redis (cache/jobs)
+- **File Storage**: Local filesystem with S3 compatibility option
+- **Task Queue**: Celery with Redis broker
+- **Authentication**: JWT with optional OAuth2 integration
+- **Deployment**: Docker containers with docker-compose
+
+---
+
+## 🗄️ **Database Architecture**
+
+### Enhanced Schema Design
+
+```sql
+-- Chain state management
+CREATE TABLE chain_states (
+    chain_id VARCHAR(255) PRIMARY KEY,
+    execution_id VARCHAR(255) NOT NULL,
+    current_step_index INTEGER NOT NULL DEFAULT 0,
+    previous_outputs JSONB NOT NULL DEFAULT '{}',
+    scheduled_for TIMESTAMP WITH TIME ZONE,
+    delay_seconds INTEGER,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by VARCHAR(255),
+    
+    CONSTRAINT valid_status CHECK (status IN ('active', 'waiting', 'scheduled', 'completed', 'failed', 'cancelled'))
+);
+
+-- Test execution tracking
+CREATE TABLE test_executions (
+    execution_id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    test_file_path VARCHAR(500) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'running',
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_by VARCHAR(255),
+    execution_config JSONB,
+    
+    CONSTRAINT valid_execution_status CHECK (status IN ('running', 'completed', 'failed', 'cancelled'))
+);
+
+-- External data uploads
+CREATE TABLE external_data_uploads (
+    upload_id VARCHAR(255) PRIMARY KEY,
+    execution_id VARCHAR(255) REFERENCES test_executions(execution_id),
+    filename VARCHAR(500) NOT NULL,
+    original_filename VARCHAR(500) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size BIGINT NOT NULL,
+    upload_path VARCHAR(1000) NOT NULL,
+    processing_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    processed_at TIMESTAMP WITH TIME ZONE,
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    uploaded_by VARCHAR(255),
+    correlation_config JSONB,
+    processing_errors JSONB,
+    
+    CONSTRAINT valid_file_type CHECK (file_type IN ('csv', 'xml')),
+    CONSTRAINT valid_processing_status CHECK (processing_status IN ('pending', 'processing', 'completed', 'failed'))
+);
+
+-- Processed external data
+CREATE TABLE external_data_records (
+    record_id VARCHAR(255) PRIMARY KEY,
+    upload_id VARCHAR(255) REFERENCES external_data_uploads(upload_id),
+    source_row_number INTEGER,
+    correlation_keys JSONB NOT NULL,
+    record_data JSONB NOT NULL,
+    matched_test_results TEXT[], -- Array of test_result IDs
+    processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enhanced test results (extends existing structure)
+CREATE TABLE test_results_enhanced (
+    result_id VARCHAR(255) PRIMARY KEY,
+    execution_id VARCHAR(255) REFERENCES test_executions(execution_id),
+    chain_id VARCHAR(255),
+    step_order INTEGER,
+    test_id VARCHAR(255),
+    
+    -- Core test data
+    call_type VARCHAR(100),
+    http_status INTEGER,
+    response_code VARCHAR(50),
+    duration_ms INTEGER,
+    
+    -- Request/Response data
+    request_data JSONB,
+    response_data JSONB,
+    
+    -- Transaction identifiers
+    transaction_id VARCHAR(255),
+    payment_id VARCHAR(255),
+    refund_id VARCHAR(255),
+    scheme_transaction_id VARCHAR(255),
+    operation_id VARCHAR(255),
+    
+    -- Test metadata
+    tags TEXT[],
+    environment VARCHAR(100),
+    merchant VARCHAR(100),
+    card_id VARCHAR(100),
+    
+    -- Timing and context
+    executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    chain_context JSONB,
+    
+    -- Results and assertions
+    pass BOOLEAN,
+    assertion_results JSONB,
+    error_message TEXT,
+    error_details JSONB,
+    
+    -- External data correlation
+    external_data_matches JSONB,
+    e2e_assertion_results JSONB
+);
+
+-- End-to-end analysis results
+CREATE TABLE e2e_analysis_results (
+    analysis_id VARCHAR(255) PRIMARY KEY,
+    execution_id VARCHAR(255) REFERENCES test_executions(execution_id),
+    test_result_id VARCHAR(255) REFERENCES test_results_enhanced(result_id),
+    external_record_ids TEXT[],
+    
+    analysis_type VARCHAR(100) NOT NULL,
+    analysis_config JSONB,
+    analysis_results JSONB,
+    pass BOOLEAN,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    CONSTRAINT valid_analysis_type CHECK (analysis_type IN ('settlement_match', 'notification_delivery', 'processing_time', 'amount_reconciliation', 'custom'))
+);
+
+-- Configuration management
+CREATE TABLE configurations (
+    config_id VARCHAR(255) PRIMARY KEY,
+    config_type VARCHAR(100) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    config_data JSONB NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by VARCHAR(255),
+    
+    CONSTRAINT valid_config_type CHECK (config_type IN ('cards', 'merchants', 'environments', 'cardonfile', 'threeddata', 'merchantdata', 'networktoken', 'address'))
+);
+
+-- User management (optional)
+CREATE TABLE users (
+    user_id VARCHAR(255) PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
+    role VARCHAR(50) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_login TIMESTAMP WITH TIME ZONE,
+    
+    CONSTRAINT valid_role CHECK (role IN ('admin', 'user', 'readonly'))
+);
+
+-- Indexes for performance
+CREATE INDEX idx_chain_states_status_scheduled ON chain_states(status, scheduled_for);
+CREATE INDEX idx_test_results_execution_chain ON test_results_enhanced(execution_id, chain_id);
+CREATE INDEX idx_external_data_correlation ON external_data_records USING GIN(correlation_keys);
+CREATE INDEX idx_test_results_transaction_ids ON test_results_enhanced(transaction_id, payment_id, scheme_transaction_id);
+```
+
+---
+
+## 🌐 **Web API Specification**
+
+### Core API Endpoints
+
+```python
+# Authentication & User Management
+POST   /api/auth/login
+POST   /api/auth/logout
+GET    /api/auth/profile
+POST   /api/auth/refresh
+
+# Configuration Management
+GET    /api/configurations/{type}          # Get all configs of type
+POST   /api/configurations/{type}          # Create new config
+PUT    /api/configurations/{type}/{id}     # Update config
+DELETE /api/configurations/{type}/{id}     # Delete config
+GET    /api/configurations/export/{type}   # Export as CSV
+POST   /api/configurations/import/{type}   # Import from CSV
+
+# Test Execution
+POST   /api/executions                     # Start new test execution
+GET    /api/executions                     # List executions
+GET    /api/executions/{execution_id}      # Get execution details
+POST   /api/executions/{execution_id}/cancel # Cancel execution
+GET    /api/executions/{execution_id}/results # Get results
+GET    /api/executions/{execution_id}/logs    # Get execution logs
+
+# Chain State Management
+GET    /api/chain-states                   # List chain states
+GET    /api/chain-states/{chain_id}        # Get chain state
+POST   /api/chain-states/{chain_id}/resume # Resume chain
+POST   /api/chain-states/{chain_id}/cancel # Cancel chain
+GET    /api/chain-states/scheduled         # Get scheduled chains
+
+# External Data Integration
+POST   /api/external-data/upload           # Upload CSV/XML files
+GET    /api/external-data/uploads          # List uploads
+GET    /api/external-data/{upload_id}      # Get upload details
+POST   /api/external-data/{upload_id}/process # Process uploaded data
+GET    /api/external-data/{upload_id}/correlation # Get correlation results
+
+# End-to-End Analysis
+POST   /api/e2e-analysis/run               # Run E2E analysis
+GET    /api/e2e-analysis/results/{execution_id} # Get E2E results
+POST   /api/e2e-analysis/rules             # Create custom analysis rules
+GET    /api/e2e-analysis/rules             # List analysis rules
+
+# Reporting & Export
+GET    /api/reports/execution/{execution_id} # Generate execution report
+GET    /api/reports/e2e/{execution_id}       # Generate E2E report
+POST   /api/reports/custom                   # Custom report generation
+GET    /api/export/results/{execution_id}    # Export results (CSV, Excel, PDF)
+
+# System Management
+GET    /api/system/health                   # System health check
+GET    /api/system/metrics                  # Performance metrics
+POST   /api/system/cleanup                  # Data cleanup operations
+```
+
+### API Models
+
+```python
+# Pydantic models for API
+class TestExecutionRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    test_file_path: str
+    tags: Optional[List[str]] = None
+    thread_count: int = 1
+    environment: Optional[str] = None
+    verbose: bool = False
+
+class ChainStateResponse(BaseModel):
+    chain_id: str
+    execution_id: str
+    current_step_index: int
+    previous_outputs: Dict[str, Any]
+    status: str
+    scheduled_for: Optional[datetime]
+    created_at: datetime
+
+class ExternalDataUpload(BaseModel):
+    filename: str
+    file_type: Literal['csv', 'xml']
+    correlation_config: Dict[str, Any]
+    processing_rules: Optional[Dict[str, Any]] = None
+
+class E2EAnalysisRequest(BaseModel):
+    execution_id: str
+    upload_ids: List[str]
+    analysis_rules: List[Dict[str, Any]]
+    correlation_strategy: str = 'transaction_id'
+```
+
+---
+
+## 🖥️ **Frontend Architecture**
+
+### React Application Structure
+
+```
+frontend/
+├── public/
+│   ├── index.html
+│   └── favicon.ico
+├── src/
+│   ├── components/              # Reusable UI components
+│   │   ├── common/             # Generic components
+│   │   │   ├── Layout.tsx
+│   │   │   ├── Navigation.tsx
+│   │   │   └── LoadingSpinner.tsx
+│   │   ├── test-management/    # Test-related components
+│   │   │   ├── TestEditor.tsx
+│   │   │   ├── ExecutionMonitor.tsx
+│   │   │   └── ResultsViewer.tsx
+│   │   ├── configuration/      # Config management
+│   │   │   ├── ConfigEditor.tsx
+│   │   │   ├── CSVUploader.tsx
+│   │   │   └── ConfigValidator.tsx
+│   │   └── external-data/      # External data features
+│   │       ├── FileUploader.tsx
+│   │       ├── CorrelationRules.tsx
+│   │       └── E2EReports.tsx
+│   ├── pages/                  # Route components
+│   │   ├── Dashboard.tsx
+│   │   ├── TestManagement.tsx
+│   │   ├── Configuration.tsx
+│   │   ├── ExternalData.tsx
+│   │   ├── Reports.tsx
+│   │   └── SystemManagement.tsx
+│   ├── services/               # API integration
+│   │   ├── api.ts             # Base API client
+│   │   ├── testService.ts     # Test execution APIs
+│   │   ├── configService.ts   # Configuration APIs
+│   │   └── externalDataService.ts # External data APIs
+│   ├── stores/                 # State management
+│   │   ├── useTestStore.ts
+│   │   ├── useConfigStore.ts
+│   │   └── useExternalDataStore.ts
+│   ├── types/                  # TypeScript definitions
+│   │   ├── test.types.ts
+│   │   ├── config.types.ts
+│   │   └── api.types.ts
+│   ├── utils/                  # Utility functions
+│   │   ├── formatters.ts
+│   │   ├── validators.ts
+│   │   └── constants.ts
+│   ├── App.tsx
+│   └── main.tsx
+├── package.json
+└── vite.config.ts
+```
+
+### Key UI Components
+
+#### 1. Test Scenario Builder
+```typescript
+// TestScenarioBuilder.tsx
+interface TestScenarioBuilderProps {
+  onSave: (scenario: TestScenario) => void;
+  initialScenario?: TestScenario;
+}
+
+// Features:
+// - Drag-and-drop step ordering
+// - Dynamic form fields based on call_type
+// - Real-time validation
+// - Preview of generated CSV
+// - Template library for common scenarios
+```
+
+#### 2. Execution Monitor
+```typescript
+// ExecutionMonitor.tsx
+interface ExecutionMonitorProps {
+  executionId: string;
+}
+
+// Features:
+// - Real-time progress updates via WebSocket
+// - Chain state visualization
+// - Live log streaming
+// - Pause/resume controls
+// - Error highlighting
+```
+
+#### 3. External Data Integration
+```typescript
+// ExternalDataIntegrator.tsx
+interface ExternalDataIntegratorProps {
+  executionId: string;
+}
+
+// Features:
+// - File upload with progress
+// - Correlation rule configuration
+// - Data preview and validation
+// - Mapping assistance
+// - Processing status tracking
+```
+
+#### 4. End-to-End Reports
+```typescript
+// E2EReportViewer.tsx
+interface E2EReportViewerProps {
+  executionId: string;
+  externalDataIds: string[];
+}
+
+// Features:
+// - Interactive data correlation display
+// - Assertion result visualization
+// - Timeline view of payment journey
+// - Export options (PDF, Excel, CSV)
+// - Custom report builder
+```
+
+---
+
+## 🔧 **Backend Implementation**
+
+### Core Service Architecture
+
+```python
+# src/web/
+├── __init__.py
+├── main.py                     # FastAPI application
+├── dependencies.py             # Common dependencies
+├── middleware.py               # Custom middleware
+├── routers/                    # API route handlers
+│   ├── __init__.py
+│   ├── auth.py
+│   ├── configurations.py
+│   ├── executions.py
+│   ├── chain_states.py
+│   ├── external_data.py
+│   └── reports.py
+├── services/                   # Business logic
+│   ├── __init__.py
+│   ├── execution_service.py
+│   ├── chain_state_service.py
+│   ├── external_data_service.py
+│   ├── correlation_service.py
+│   └── e2e_analysis_service.py
+├── models/                     # Database models
+│   ├── __init__.py
+│   ├── database.py
+│   ├── test_execution.py
+│   ├── chain_state.py
+│   ├── external_data.py
+│   └── user.py
+├── schemas/                    # Pydantic schemas
+│   ├── __init__.py
+│   ├── execution.py
+│   ├── chain_state.py
+│   ├── external_data.py
+│   └── e2e_analysis.py
+└── workers/                    # Background tasks
+    ├── __init__.py
+    ├── execution_worker.py
+    ├── data_processor.py
+    └── scheduler.py
+```
+
+### Key Service Implementations
+
+#### 1. Chain State Service
+```python
+# services/chain_state_service.py
+class ChainStateService:
+    def __init__(self, db: Database):
+        self.db = db
+    
+    async def save_chain_state(self, chain_id: str, execution_id: str, 
+                              step_index: int, previous_outputs: dict,
+                              scheduled_for: Optional[datetime] = None):
+        """Persist chain state for later continuation"""
+        
+    async def get_ready_chains(self) -> List[ChainState]:
+        """Get chains ready for execution"""
+        
+    async def resume_chain(self, chain_id: str) -> ExecutionResult:
+        """Continue chain from saved state"""
+        
+    async def schedule_chain_continuation(self, chain_id: str, 
+                                        delay_days: int):
+        """Schedule chain for future execution"""
+```
+
+#### 2. External Data Service
+```python
+# services/external_data_service.py
+class ExternalDataService:
+    def __init__(self, db: Database, file_storage: FileStorage):
+        self.db = db
+        self.file_storage = file_storage
+    
+    async def process_csv_upload(self, file: UploadFile, 
+                               correlation_config: dict) -> ProcessingResult:
+        """Process uploaded CSV file"""
+        
+    async def process_xml_upload(self, file: UploadFile,
+                               parsing_rules: dict) -> ProcessingResult:
+        """Process uploaded XML file"""
+        
+    async def correlate_with_test_results(self, upload_id: str,
+                                        execution_id: str) -> CorrelationResult:
+        """Link external data with test results"""
+```
+
+#### 3. E2E Analysis Service
+```python
+# services/e2e_analysis_service.py
+class E2EAnalysisService:
+    def __init__(self, db: Database):
+        self.db = db
+    
+    async def run_settlement_analysis(self, execution_id: str,
+                                    external_data_ids: List[str]) -> AnalysisResult:
+        """Verify settlement amounts match payment amounts"""
+        
+    async def run_notification_analysis(self, execution_id: str,
+                                      notification_data_id: str) -> AnalysisResult:
+        """Verify notification delivery within SLA"""
+        
+    async def run_custom_analysis(self, analysis_config: dict) -> AnalysisResult:
+        """Run user-defined analysis rules"""
+```
+
+### Background Task System
+
+```python
+# workers/execution_worker.py
+from celery import Celery
+
+celery_app = Celery('payment_testing_framework')
+
+@celery_app.task
+def execute_test_chain_async(execution_id: str, chain_data: dict):
+    """Execute test chain in background"""
+    
+@celery_app.task
+def process_external_data_async(upload_id: str, processing_config: dict):
+    """Process uploaded external data"""
+    
+@celery_app.task
+def run_scheduled_chain_check():
+    """Check for chains ready to resume (runs hourly)"""
+    
+@celery_app.task
+def cleanup_old_executions():
+    """Clean up old execution data (runs daily)"""
+```
+
+---
+
+## 📁 **File Upload & Processing**
+
+### File Storage Architecture
+
+```python
+# File storage structure
+uploads/
+├── executions/
+│   └── {execution_id}/
+│       ├── external_data/
+│       │   ├── {upload_id}_original.csv
+│       │   ├── {upload_id}_processed.json
+│       │   └── {upload_id}_correlation.json
+│       ├── results/
+│       │   ├── framework_results.csv
+│       │   └── combined_results.csv
+│       └── reports/
+│           ├── execution_report.pdf
+│           └── e2e_analysis.html
+├── configurations/
+│   └── {timestamp}/
+│       ├── cards.csv
+│       ├── merchants.csv
+│       └── ...
+└── temp/
+    └── {session_id}/
+        └── upload_staging/
+```
+
+### CSV Processing Pipeline
+
+```python
+# external_data/csv_processor.py
+class CSVProcessor:
+    def __init__(self):
+        self.validators = {
+            'settlement_data': SettlementDataValidator(),
+            'notification_logs': NotificationLogValidator(),
+            'backend_processing': BackendProcessingValidator()
+        }
+    
+    def process_csv(self, file_path: str, data_type: str,
+                   correlation_config: dict) -> ProcessedData:
+        """
+        Process CSV file with validation and normalization
+        
+        Steps:
+        1. Detect encoding and delimiter
+        2. Validate column structure
+        3. Normalize data types
+        4. Extract correlation keys
+        5. Store processed data
+        """
+        
+    def extract_correlation_keys(self, data: pd.DataFrame,
+                               config: dict) -> List[dict]:
+        """Extract keys for linking with test results"""
+        # Common correlation strategies:
+        # - transaction_id exact match
+        # - timestamp range matching
+        # - reference_id pattern matching
+        # - amount + currency matching
+```
+
+### XML Processing Pipeline
+
+```python
+# external_data/xml_processor.py
+class XMLProcessor:
+    def __init__(self):
+        self.parsers = {
+            'iso20022': ISO20022Parser(),
+            'swift_mt': SwiftMTParser(), 
+            'proprietary': ProprietaryXMLParser()
+        }
+    
+    def process_xml(self, file_path: str, parser_type: str,
+                   extraction_rules: dict) -> ProcessedData:
+        """
+        Process XML file with configurable extraction
+        
+        Features:
+        - XPath-based data extraction
+        - Namespace handling
+        - Hierarchical data flattening
+        - Validation against schema
+        """
+```
+
+---
+
+## 🔗 **Data Correlation Engine**
+
+### Correlation Strategies
+
+```python
+# correlation/correlation_engine.py
+class CorrelationEngine:
+    def __init__(self):
+        self.strategies = {
+            'exact_match': ExactMatchStrategy(),
+            'fuzzy_match': FuzzyMatchStrategy(),
+            'time_window': TimeWindowStrategy(),
+            'composite': CompositeStrategy()
+        }
+    
+    def correlate_data(self, test_results: List[TestResult],
+                      external_data: List[ExternalRecord],
+                      strategy_config: dict) -> CorrelationResult:
+        """
+        Link test results with external data
+        
+        Correlation methods:
+        1. Exact transaction ID match
+        2. Payment ID + amount match
+        3. Timestamp window + merchant match
+        4. Reference number pattern match
+        5. Composite multi-field matching
+        """
+
+class ExactMatchStrategy:
+    def match(self, test_result: TestResult, 
+             external_records: List[ExternalRecord]) -> List[Match]:
+        """Direct field matching"""
+        
+class TimeWindowStrategy:
+    def match(self, test_result: TestResult,
+             external_records: List[ExternalRecord],
+             window_minutes: int = 30) -> List[Match]:
+        """Match within time window"""
+
+class CompositeStrategy:
+    def match(self, test_result: TestResult,
+             external_records: List[ExternalRecord],
+             rules: List[MatchRule]) -> List[Match]:
+        """Multi-criteria matching with confidence scoring"""
+```
+
+### Correlation Configuration
+
+```yaml
+# Example correlation configuration
+correlation_rules:
+  primary_strategy: "exact_match"
+  fallback_strategy: "time_window"
+  
+  field_mappings:
+    transaction_id: 
+      test_result_field: "transaction_id"
+      external_data_field: "txn_reference"
+    
+    amount:
+      test_result_field: "amount"
+      external_data_field: "settlement_amount"
+      tolerance: 0.01
+    
+    timestamp:
+      test_result_field: "executed_at"
+      external_data_field: "processing_timestamp"
+      window_minutes: 30
+  
+  confidence_thresholds:
+    high_confidence: 0.95
+    medium_confidence: 0.80
+    low_confidence: 0.60
+```
+
+---
+
+## 📊 **End-to-End Analysis Framework**
+
+### Analysis Rules Engine
+
+```python
+# e2e_analysis/analysis_engine.py
+class E2EAnalysisEngine:
+    def __init__(self):
+        self.analyzers = {
+            'settlement_reconciliation': SettlementAnalyzer(),
+            'notification_delivery': NotificationAnalyzer(),
+            'processing_time': ProcessingTimeAnalyzer(),
+            'amount_validation': AmountValidationAnalyzer(),
+            'status_consistency': StatusConsistencyAnalyzer()
+        }
+    
+    def run_analysis(self, correlation_results: List[CorrelationResult],
+                    analysis_config: dict) -> E2EAnalysisResult:
+        """Run comprehensive end-to-end analysis"""
+
+class SettlementAnalyzer:
+    def analyze(self, test_result: TestResult,
+               settlement_data: List[ExternalRecord]) -> AnalysisResult:
+        """
+        Verify settlement data matches payment:
+        - Amount reconciliation
+        - Currency conversion accuracy
+        - Settlement timing
+        - Fee calculations
+        """
+
+class NotificationAnalyzer:
+    def analyze(self, test_result: TestResult,
+               notification_data: List[ExternalRecord]) -> AnalysisResult:
+        """
+        Verify notification delivery:
+        - Delivery within SLA
+        - Correct recipient
+        - Message content accuracy
+        - Retry logic validation
+        """
+
+class ProcessingTimeAnalyzer:
+    def analyze(self, test_result: TestResult,
+               processing_data: List[ExternalRecord]) -> AnalysisResult:
+        """
+        Analyze processing performance:
+        - API response time
+        - Backend processing duration
+        - Queue waiting time
+        - Total end-to-end time
+        """
+```
+
+### Custom Analysis Rules
+
+```python
+# Custom analysis rule configuration
+class CustomAnalysisRule:
+    def __init__(self, name: str, description: str, 
+                 conditions: List[Condition], 
+                 assertions: List[Assertion]):
+        self.name = name
+        self.description = description
+        self.conditions = conditions
+        self.assertions = assertions
+    
+    def evaluate(self, test_result: TestResult,
+                external_data: List[ExternalRecord]) -> RuleResult:
+        """Evaluate custom rule against data"""
+
+# Example custom rules
+settlement_timing_rule = CustomAnalysisRule(
+    name="Settlement Timing Validation",
+    description="Verify settlement occurs within 2 business days",
+    conditions=[
+        FieldCondition("call_type", "==", "create_payment"),
+        FieldCondition("response_code", "==", "0")
+    ],
+    assertions=[
+        TimeAssertion("settlement_timestamp", "<=", "executed_at + 2 business days"),
+        AmountAssertion("settlement_amount", "==", "payment_amount")
+    ]
+)
+```
+
+---
+
+## ⏱️ **Chain State Management**
+
+### State Persistence
+
+```python
+# chain_state/state_manager.py
+class ChainStateManager:
+    def __init__(self, db: Database, redis_client: Redis):
+        self.db = db
+        self.redis = redis_client
+    
+    async def save_execution_state(self, chain_id: str, 
+                                  execution_context: ExecutionContext):
+        """Save complete chain execution state"""
+        state = ChainExecutionState(
+            chain_id=chain_id,
+            current_step_index=execution_context.current_step,
+            previous_outputs=execution_context.previous_outputs,
+            chain_config=execution_context.chain_config,
+            execution_metadata=execution_context.metadata
+        )
+        
+        # Save to database for persistence
+        await self.db.save_chain_state(state)
+        
+        # Cache in Redis for quick access
+        await self.redis.setex(
+            f"chain_state:{chain_id}", 
+            3600, 
+            state.json()
+        )
+    
+    async def load_execution_state(self, chain_id: str) -> ChainExecutionState:
+        """Load chain state from cache or database"""
+        # Try Redis cache first
+        cached_state = await self.redis.get(f"chain_state:{chain_id}")
+        if cached_state:
+            return ChainExecutionState.parse_raw(cached_state)
+        
+        # Fallback to database
+        return await self.db.load_chain_state(chain_id)
+    
+    async def schedule_chain_continuation(self, chain_id: str, 
+                                        schedule_time: datetime):
+        """Schedule chain for future execution"""
+        await self.db.update_chain_schedule(chain_id, schedule_time)
+        
+        # Add to scheduler queue
+        delay_seconds = (schedule_time - datetime.now()).total_seconds()
+        celery_app.apply_async(
+            'resume_chain_execution',
+            args=[chain_id],
+            countdown=delay_seconds
+        )
+```
+
+### Delayed Execution Framework
+
+```python
+# Enhanced main execution loop with delay support
+class EnhancedTestRunner:
+    def __init__(self, state_manager: ChainStateManager):
+        self.state_manager = state_manager
+    
+    async def execute_chain_with_delays(self, chain: TestChain) -> ExecutionResult:
+        """Execute chain with support for delays and scheduling"""
+        
+        execution_context = ExecutionContext(
+            chain_id=chain.chain_id,
+            previous_outputs={},
+            current_step=0
+        )
+        
+        for step_index, step in enumerate(chain.steps):
+            execution_context.current_step = step_index
+            
+            # Check for delay requirements
+            if step.delay_seconds:
+                await self._handle_step_delay(step.delay_seconds)
+            
+            if step.delay_until_datetime:
+                await self._schedule_step_continuation(
+                    chain.chain_id, 
+                    step.delay_until_datetime,
+                    execution_context
+                )
+                return PartialExecutionResult(
+                    status="scheduled",
+                    next_execution=step.delay_until_datetime
+                )
+            
+            if step.execute_after_days:
+                scheduled_time = datetime.now() + timedelta(days=step.execute_after_days)
+                await self._schedule_step_continuation(
+                    chain.chain_id,
+                    scheduled_time,
+                    execution_context
+                )
+                return PartialExecutionResult(
+                    status="scheduled",
+                    next_execution=scheduled_time
+                )
+            
+            # Execute current step
+            step_result = await self.execute_step(step, execution_context)
+            execution_context.previous_outputs.update(step_result.outputs)
+            
+            # Save state after each step
+            await self.state_manager.save_execution_state(
+                chain.chain_id, 
+                execution_context
+            )
+        
+        return CompleteExecutionResult(status="completed")
+    
+    async def resume_chain_execution(self, chain_id: str) -> ExecutionResult:
+        """Continue chain execution from saved state"""
+        state = await self.state_manager.load_execution_state(chain_id)
+        
+        # Reconstruct chain from saved state
+        chain = await self.reconstruct_chain(state)
+        
+        # Continue from saved step
+        execution_context = ExecutionContext.from_state(state)
+        
+        return await self.execute_remaining_steps(chain, execution_context)
+```
+
+### CSV Configuration for Delays
+
+```csv
+# Enhanced CSV with delay configuration
+chain_id,step_order,call_type,test_id,delay_seconds,delay_until_datetime,execute_after_days,tags
+auth_settle_chain,1,create_payment,AUTH001,,,,"auth"
+auth_settle_chain,2,capture_payment,CAP001,30,,,"capture"  
+auth_settle_chain,3,check_settlement,SETTLE001,,"2025-08-16 09:00:00",,"settlement"
+chargeback_chain,1,create_payment,CB_AUTH001,,,,"chargeback"
+chargeback_chain,2,simulate_chargeback,CB_SIM001,,,30,"chargeback"
+notification_chain,1,create_payment,NOTIF001,,,,"notification"
+notification_chain,2,check_notification,NOTIF_CHECK001,60,,,"notification"
+```
+
+---
+
+## 🧪 **Testing Strategy**
+
+### Unit Testing
+
+```python
+# tests/web/test_chain_state_service.py
+import pytest
+from unittest.mock import Mock, AsyncMock
+from src.web.services.chain_state_service import ChainStateService
+
+class TestChainStateService:
+    @pytest.fixture
+    def chain_state_service(self):
+        mock_db = AsyncMock()
+        return ChainStateService(mock_db)
+    
+    async def test_save_chain_state(self, chain_state_service):
+        """Test chain state persistence"""
+        chain_id = "test_chain_001"
+        execution_id = "exec_001" 
+        step_index = 2
+        previous_outputs = {"payment_id": "pay_123"}
+        
+        await chain_state_service.save_chain_state(
+            chain_id, execution_id, step_index, previous_outputs
+        )
+        
+        chain_state_service.db.save_chain_state.assert_called_once()
+    
+    async def test_resume_chain_execution(self, chain_state_service):
+        """Test chain continuation from saved state"""
+        # Setup mock saved state
+        mock_state = Mock()
+        mock_state.chain_id = "test_chain_001"
+        mock_state.current_step_index = 2
+        mock_state.previous_outputs = {"payment_id": "pay_123"}
+        
+        chain_state_service.db.load_chain_state.return_value = mock_state
+        
+        result = await chain_state_service.resume_chain("test_chain_001")
+        
+        assert result is not None
+        chain_state_service.db.load_chain_state.assert_called_once_with("test_chain_001")
+
+# tests/web/test_external_data_service.py
+class TestExternalDataService:
+    async def test_csv_processing(self, external_data_service):
+        """Test CSV file processing and validation"""
+        
+    async def test_xml_processing(self, external_data_service):
+        """Test XML file processing with different formats"""
+        
+    async def test_data_correlation(self, external_data_service):
+        """Test linking external data with test results"""
+
+# tests/web/test_e2e_analysis.py
+class TestE2EAnalysis:
+    async def test_settlement_analysis(self, e2e_analysis_service):
+        """Test settlement amount reconciliation"""
+        
+    async def test_notification_analysis(self, e2e_analysis_service):
+        """Test notification delivery validation"""
+        
+    async def test_custom_analysis_rules(self, e2e_analysis_service):
+        """Test custom analysis rule evaluation"""
+```
+
+### Integration Testing
+
+```python
+# tests/integration/test_full_workflow.py
+class TestFullWorkflow:
+    async def test_complete_e2e_workflow(self):
+        """Test complete workflow from test execution to E2E analysis"""
+        # 1. Create test execution
+        # 2. Upload external data
+        # 3. Process correlation
+        # 4. Run E2E analysis
+        # 5. Verify results
+        
+    async def test_delayed_chain_execution(self):
+        """Test chain execution with delays and state persistence"""
+        # 1. Start chain with delay
+        # 2. Verify state is saved
+        # 3. Resume execution
+        # 4. Verify continuation works correctly
+        
+    async def test_concurrent_executions(self):
+        """Test multiple simultaneous test executions"""
+        # Verify isolation and performance
+```
+
+### Performance Testing
+
+```python
+# tests/performance/test_api_performance.py
+class TestAPIPerformance:
+    async def test_concurrent_uploads(self):
+        """Test handling multiple file uploads simultaneously"""
+        
+    async def test_large_dataset_correlation(self):
+        """Test correlation performance with large datasets"""
+        
+    async def test_database_performance(self):
+        """Test database queries under load"""
+        
+    async def test_websocket_performance(self):
+        """Test real-time update performance"""
+```
+
+---
+
+## 📦 **Deployment & DevOps**
+
+### Docker Configuration
+
+```dockerfile
+# Dockerfile.backend
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/ ./src/
+COPY config/ ./config/
+
+# Create uploads directory
+RUN mkdir -p uploads/temp uploads/executions uploads/configurations
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.web.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+```dockerfile
+# Dockerfile.frontend
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80
+```
+
+### Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: payment_testing
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+  
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+  
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/payment_testing
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-secret-key-here
+    volumes:
+      - ./uploads:/app/uploads
+      - ./config:/app/config
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+  
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A src.web.workers.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/payment_testing
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./uploads:/app/uploads
+      - ./config:/app/config
+    depends_on:
+      - postgres
+      - redis
+  
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A src.web.workers.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/payment_testing
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+  
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+### Environment Configuration
+
+```bash
+# .env.production
+DATABASE_URL=postgresql://user:password@postgres:5432/payment_testing
+REDIS_URL=redis://redis:6379/0
+SECRET_KEY=your-production-secret-key
+JWT_ALGORITHM=HS256
+JWT_EXPIRE_MINUTES=1440
+
+# File storage
+UPLOAD_DIR=/app/uploads
+MAX_UPLOAD_SIZE=100MB
+ALLOWED_EXTENSIONS=csv,xml
+
+# Celery configuration
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+# Application settings
+DEBUG=false
+LOG_LEVEL=INFO
+CORS_ORIGINS=http://localhost:3000,https://yourdomain.com
+```
+
+---
+
+## 📋 **Prioritized Implementation Checklist**
+
+### 🥇 **Phase 1: Foundation & Core Infrastructure (Weeks 1-3)**
+
+#### Week 1: Database & Backend Setup
+- [ ] **Setup development environment**
+  - [ ] Create feature branch `feature/web-gui-external-data`
+  - [ ] Setup Docker development environment
+  - [ ] Configure PostgreSQL database with schema
+  - [ ] Setup Redis for caching and task queue
+  - [ ] Configure Celery for background tasks
+
+- [ ] **Database implementation**
+  - [ ] Implement database models (SQLAlchemy)
+  - [ ] Create migration scripts
+  - [ ] Setup database indexes for performance
+  - [ ] Implement basic CRUD operations
+  - [ ] Add database connection pooling
+
+- [ ] **Core services foundation**
+  - [ ] Implement database service layer
+  - [ ] Create configuration management service
+  - [ ] Setup logging and monitoring
+  - [ ] Implement health check endpoints
+  - [ ] Add error handling framework
+
+#### Week 2: Chain State Management
+- [ ] **Chain state persistence**
+  - [ ] Implement ChainStateService
+  - [ ] Create chain state database models
+  - [ ] Build state saving/loading logic
+  - [ ] Implement state validation
+  - [ ] Add state cleanup mechanisms
+
+- [ ] **Delayed execution framework**
+  - [ ] Enhance existing TestRunner with delay support
+  - [ ] Implement scheduling logic
+  - [ ] Create Celery tasks for chain continuation
+  - [ ] Build chain resumption logic
+  - [ ] Add error recovery for failed continuations
+
+- [ ] **CSV configuration enhancement**
+  - [ ] Extend CSV schema for delay fields
+  - [ ] Update configuration parser
+  - [ ] Implement validation for delay configurations
+  - [ ] Create migration tools for existing CSV files
+  - [ ] Add examples and documentation
+
+#### Week 3: Basic Web API
+- [ ] **FastAPI application setup**
+  - [ ] Create FastAPI application structure
+  - [ ] Implement authentication framework (JWT)
+  - [ ] Setup CORS and security middleware
+  - [ ] Create API documentation (OpenAPI)
+  - [ ] Implement request/response validation
+
+- [ ] **Core API endpoints**
+  - [ ] Authentication endpoints (login, refresh, profile)
+  - [ ] Configuration CRUD endpoints
+  - [ ] Test execution endpoints
+  - [ ] Chain state management endpoints
+  - [ ] Health check and metrics endpoints
+
+- [ ] **Integration with existing framework**
+  - [ ] Wrap existing execution logic with web service
+  - [ ] Implement async execution with Celery
+  - [ ] Add WebSocket support for real-time updates
+  - [ ] Create result streaming mechanisms
+  - [ ] Ensure backwards compatibility
+
+### 🥈 **Phase 2: External Data Integration (Weeks 4-6)**
+
+#### Week 4: File Upload & Processing
+- [ ] **File upload infrastructure**
+  - [ ] Implement secure file upload endpoints
+  - [ ] Create file storage service (local + S3 option)
+  - [ ] Add file validation and virus scanning
+  - [ ] Implement upload progress tracking
+  - [ ] Create temporary file cleanup
+
+- [ ] **CSV processing pipeline**
+  - [ ] Build CSV processor with pandas
+  - [ ] Implement data validation framework
+  - [ ] Create encoding detection
+  - [ ] Add data type inference and conversion
+  - [ ] Implement error reporting and recovery
+
+- [ ] **XML processing pipeline**
+  - [ ] Build XML parser with configurable rules
+  - [ ] Implement XPath-based data extraction
+  - [ ] Add namespace handling
+  - [ ] Create hierarchical data flattening
+  - [ ] Add schema validation support
+
+#### Week 5: Data Correlation Engine
+- [ ] **Correlation framework**
+  - [ ] Implement CorrelationEngine with multiple strategies
+  - [ ] Build exact match correlation
+  - [ ] Implement fuzzy matching with confidence scores
+  - [ ] Create time-window based correlation
+  - [ ] Add composite multi-field matching
+
+- [ ] **Correlation configuration**
+  - [ ] Create correlation rule configuration system
+  - [ ] Implement field mapping framework
+  - [ ] Add correlation validation
+  - [ ] Create correlation preview functionality
+  - [ ] Build correlation debugging tools
+
+- [ ] **Data linking implementation**
+  - [ ] Link external data with test results
+  - [ ] Implement correlation result storage
+  - [ ] Create correlation metrics and statistics
+  - [ ] Add manual correlation override
+  - [ ] Implement correlation result caching
+
+#### Week 6: End-to-End Analysis
+- [ ] **Analysis framework**
+  - [ ] Implement E2EAnalysisEngine
+  - [ ] Build settlement reconciliation analyzer
+  - [ ] Create notification delivery analyzer
+  - [ ] Implement processing time analyzer
+  - [ ] Add amount validation analyzer
+
+- [ ] **Custom analysis rules**
+  - [ ] Create custom rule configuration system
+  - [ ] Implement rule evaluation engine
+  - [ ] Add rule validation and testing
+  - [ ] Create rule templates library
+  - [ ] Build rule debugging tools
+
+- [ ] **Analysis reporting**
+  - [ ] Generate comprehensive E2E reports
+  - [ ] Create analysis result visualization
+  - [ ] Implement export functionality (PDF, Excel)
+  - [ ] Add analysis result storage
+  - [ ] Create analysis history tracking
+
+### 🥉 **Phase 3: Web Frontend Development (Weeks 7-9)**
+
+#### Week 7: Frontend Foundation
+- [ ] **React application setup**
+  - [ ] Create React app with TypeScript
+  - [ ] Setup build pipeline (Vite/Webpack)
+  - [ ] Configure state management (Zustand/Redux)
+  - [ ] Setup routing (React Router)
+  - [ ] Implement authentication flow
+
+- [ ] **UI framework integration**
+  - [ ] Choose and setup UI library (Material-UI/Ant Design)
+  - [ ] Create design system and theme
+  - [ ] Implement common components
+  - [ ] Setup responsive layout framework
+  - [ ] Create navigation structure
+
+- [ ] **API integration layer**
+  - [ ] Create API client with authentication
+  - [ ] Implement request/response interceptors
+  - [ ] Add error handling and retry logic
+  - [ ] Create typed API service functions
+  - [ ] Setup API response caching
+
+#### Week 8: Core UI Components
+- [ ] **Test management interface**
+  - [ ] Create test scenario builder with drag-drop
+  - [ ] Implement execution monitor with real-time updates
+  - [ ] Build results viewer with filtering and search
+  - [ ] Create test history and comparison views
+  - [ ] Add test export/import functionality
+
+- [ ] **Configuration management**
+  - [ ] Build configuration editor for all CSV types
+  - [ ] Implement CSV upload/download with validation
+  - [ ] Create configuration versioning interface
+  - [ ] Add configuration backup/restore
+  - [ ] Build configuration validation dashboard
+
+- [ ] **External data integration UI**
+  - [ ] Create file upload interface with progress
+  - [ ] Build correlation rule configuration
+  - [ ] Implement data preview and validation
+  - [ ] Create correlation result visualization
+  - [ ] Add external data management interface
+
+#### Week 9: Advanced UI Features
+- [ ] **Chain state management UI**
+  - [ ] Create chain execution monitoring
+  - [ ] Build scheduled chains dashboard
+  - [ ] Implement chain continuation controls
+  - [ ] Add chain state visualization
+  - [ ] Create chain debugging interface
+
+- [ ] **Reporting and analytics**
+  - [ ] Build E2E analysis dashboard
+  - [ ] Create interactive report viewer
+  - [ ] Implement custom report builder
+  - [ ] Add data visualization charts
+  - [ ] Create export functionality
+
+- [ ] **User experience enhancements**
+  - [ ] Add real-time notifications
+  - [ ] Implement progressive web app features
+  - [ ] Create keyboard shortcuts
+  - [ ] Add dark mode support
+  - [ ] Implement accessibility features
+
+### 🚀 **Phase 4: Integration & Production Readiness (Weeks 10-12)**
+
+#### Week 10: System Integration
+- [ ] **End-to-end testing**
+  - [ ] Create comprehensive integration tests
+  - [ ] Test complete workflows (test → upload → correlate → analyze)
+  - [ ] Validate delayed chain execution
+  - [ ] Test concurrent execution scenarios
+  - [ ] Verify data integrity across all components
+
+- [ ] **Performance optimization**
+  - [ ] Optimize database queries and indexes
+  - [ ] Implement response caching
+  - [ ] Add database connection pooling
+  - [ ] Optimize file processing performance
+  - [ ] Add API rate limiting
+
+- [ ] **Security hardening**
+  - [ ] Implement comprehensive input validation
+  - [ ] Add file upload security measures
+  - [ ] Create audit logging
+  - [ ] Implement role-based access control
+  - [ ] Add security headers and CSRF protection
+
+#### Week 11: Production Setup
+- [ ] **Deployment infrastructure**
+  - [ ] Create production Docker images
+  - [ ] Setup CI/CD pipeline
+  - [ ] Configure production database
+  - [ ] Setup Redis cluster for high availability
+  - [ ] Create backup and recovery procedures
+
+- [ ] **Monitoring and observability**
+  - [ ] Implement application metrics
+  - [ ] Add distributed tracing
+  - [ ] Create alerting rules
+  - [ ] Setup log aggregation
+  - [ ] Build health check dashboard
+
+- [ ] **Documentation and training**
+  - [ ] Create user documentation
+  - [ ] Build administrator guide
+  - [ ] Create API documentation
+  - [ ] Develop training materials
+  - [ ] Create troubleshooting guide
+
+#### Week 12: Launch Preparation
+- [ ] **User acceptance testing**
+  - [ ] Conduct user training sessions
+  - [ ] Gather feedback and implement improvements
+  - [ ] Perform load testing
+  - [ ] Validate backup and recovery procedures
+  - [ ] Create go-live checklist
+
+- [ ] **Final polish and launch**
+  - [ ] Fix remaining bugs and issues
+  - [ ] Optimize user experience
+  - [ ] Create launch communications
+  - [ ] Prepare support procedures
+  - [ ] Execute production deployment
+
+### 📈 **Post-Launch Enhancements (Weeks 13+)**
+
+#### Immediate Post-Launch (Weeks 13-14)
+- [ ] **User feedback integration**
+  - [ ] Gather user feedback and usage analytics
+  - [ ] Implement high-priority improvements
+  - [ ] Fix any production issues
+  - [ ] Optimize performance based on usage patterns
+  - [ ] Create user onboarding improvements
+
+#### Future Enhancements (Weeks 15+)
+- [ ] **Advanced features**
+  - [ ] Implement advanced analytics and machine learning
+  - [ ] Add automated anomaly detection
+  - [ ] Create predictive analysis capabilities
+  - [ ] Build integration with external monitoring systems
+  - [ ] Add advanced reporting and business intelligence
+
+- [ ] **Scalability improvements**
+  - [ ] Implement horizontal scaling
+  - [ ] Add database sharding if needed
+  - [ ] Create multi-region deployment
+  - [ ] Implement advanced caching strategies
+  - [ ] Add cloud-native features
+
+---
+
+## 🎯 **Success Metrics & KPIs**
+
+### Technical Metrics
+- **Performance**: API response times < 200ms for 95% of requests
+- **Scalability**: Support 50+ concurrent users with < 5% performance degradation
+- **Reliability**: 99.9% uptime excluding planned maintenance
+- **Data Accuracy**: 95%+ correlation accuracy for external data
+- **Storage Efficiency**: Optimized database queries with < 100ms average response
+
+### User Experience Metrics
+- **Adoption Rate**: 80%+ of existing CLI users migrate to web interface
+- **Task Completion**: 90%+ success rate for common workflows
+- **User Satisfaction**: 4.5+ rating on usability surveys
+- **Learning Curve**: New users productive within 2 hours
+- **Error Rate**: < 5% user errors in typical workflows
+
+### Business Impact Metrics
+- **Time Savings**: 50%+ reduction in test setup time
+- **Productivity**: 3x increase in test scenarios created per week
+- **Collaboration**: 80%+ improvement in cross-team test sharing
+- **Insight Generation**: 5x increase in actionable insights from E2E analysis
+- **Cost Efficiency**: 30%+ reduction in manual testing effort
+
+---
+
+## 🔮 **Future Roadmap & Extensions**
+
+### Phase 5: Advanced Analytics (v3.1.0)
+- **Machine Learning Integration**: Predictive failure analysis
+- **Anomaly Detection**: Automated identification of unusual patterns
+- **Trend Analysis**: Historical performance trending
+- **Business Intelligence**: Advanced reporting and dashboards
+- **API Performance Optimization**: ML-driven performance improvements
+
+### Phase 6: Enterprise Features (v3.2.0)
+- **Multi-tenancy**: Support for multiple organizations
+- **Advanced RBAC**: Fine-grained permission system
+- **SSO Integration**: Enterprise authentication
+- **Compliance Reporting**: Automated regulatory reports
+- **Advanced Workflows**: Complex approval and review processes
+
+### Phase 7: Ecosystem Integration (v3.3.0)
+- **Third-party Integrations**: Slack, Teams, JIRA integration
+- **API Marketplace**: Share and discover test scenarios
+- **Plugin System**: Custom analyzers and processors
+- **Webhook Support**: Real-time integration with external systems
+- **Mobile App**: Mobile monitoring and alerts
+
+---
+
+## 📝 **Conclusion**
+
+This specification outlines a comprehensive transformation of the Payment API Testing Framework into a world-class payment ecosystem monitoring platform. The phased approach ensures deliverable milestones while building toward the ultimate vision of complete end-to-end payment visibility.
+
+The combination of web-based accessibility, external data integration, and intelligent chain state management positions this framework as an enterprise-grade solution that can grow with organizational needs while maintaining the robust foundation already established in v2.2.0.
+
+**Next Steps**: 
+1. Review and approve this specification
+2. Create detailed task breakdown for Phase 1
+3. Setup development environment and begin implementation
+4. Establish regular progress reviews and milestone checkpoints
+
+This roadmap transforms the framework from a testing tool into a comprehensive payment ecosystem platform, delivering significant business value while maintaining technical excellence.
+
+---
+
+**Document Version**: 3.0.0  
+**Last Updated**: August 15, 2025  
+**Next Review**: Weekly during development phases

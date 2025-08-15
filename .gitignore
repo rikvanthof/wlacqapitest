@@ -58,3 +58,142 @@ build/*.backup
 
 # Debug and development tools
 debug/
+
+# ===================================
+# Web Interface & Database (v3.0.0)
+# ===================================
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Database backup files
+*.sql
+*.dump
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environment (if accidentally added)
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE and Editor files
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/*.code-workspace
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing and Coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+cover/
+htmlcov/
+.hypothesis/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Upload directories (runtime uploads)
+uploads/executions/*/
+uploads/temp/*/
+uploads/configurations/*/backup/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Package manager
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Celery beat schedule file
+celerybeat-schedule
+celerybeat.pid
+
+# Redis dump file
+dump.rdb
+
+# FastAPI/Uvicorn
+.uvicorn/
+
+# Alembic (database migrations) - keep structure, ignore auto-generated
+alembic/versions/*.py
+!alembic/versions/__init__.py
+
+# Web frontend build artifacts (future)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/dist/
+frontend/build/
+
+# Local development overrides
+config/local/
+config/development/
+config/*.local.*
+
+# Performance profiling
+*.prof
+*.profraw
+
+# Backup files
+*.bak
+*.backup
+*.orig
+debug/
