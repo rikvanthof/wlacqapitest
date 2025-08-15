@@ -8,6 +8,8 @@ from worldline.acquiring.sdk.v1.domain.api_payment_reversal_request import ApiPa
 from worldline.acquiring.sdk.v1.domain.api_refund_request import ApiRefundRequest
 from worldline.acquiring.sdk.v1.domain.api_capture_request_for_refund import ApiCaptureRequestForRefund
 from worldline.acquiring.sdk.v1.domain.api_refund_reversal_request import ApiRefundReversalRequest
+from worldline.acquiring.sdk.v1.domain.api_account_verification_request import ApiAccountVerificationRequest
+
 from worldline.acquiring.sdk.v1.domain.amount_data import AmountData
 
 import threading
@@ -404,4 +406,15 @@ def technical_reversal_call(client, acquirer_id, merchant_id, original_operation
         return response
     except Exception as e:
         logger.error(f"Technical reversal failed - Original Operation: {original_operation_id}, Error: {e}")
+        raise
+
+def account_verification_call(client, acquirer_id, merchant_id, request):
+    """Execute account verification API call"""
+    try:
+        logger.info(f"Executing account verification - Acquirer: {acquirer_id}")
+        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).account_verifications().create(request)
+        logger.info(f"Account verification successful - Operation ID: {getattr(request, 'operation_id', 'unknown')}")
+        return response
+    except Exception as e:
+        logger.error(f"Account verification failed - Error: {e}")
         raise
