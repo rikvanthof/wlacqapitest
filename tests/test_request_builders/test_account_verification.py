@@ -154,3 +154,47 @@ class TestBuildAccountVerificationRequest:
             mock_clean.return_value = Mock()
             build_account_verification_request(row, mock_cards_df)
             mock_clean.assert_called_once()
+    
+    def test_build_with_brand_selector_merchant(self):
+        """Test building request with merchant brand selector"""
+        row = pd.Series({
+            'test_id': 'ACC_BRAND_001',
+            'card_id': 'card1',
+            'brand_selector': 'MERCHANT',
+            'currency': '',     # ✅ Add missing currency
+            'amount': ''        # ✅ Add missing amount (empty for account verification)
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_account_verification_request(row, cards_df)
+        
+        assert hasattr(request, 'card_payment_data')
+        assert hasattr(request.card_payment_data, 'brand_selector')
+        assert request.card_payment_data.brand_selector == 'MERCHANT'
+
+    def test_build_with_brand_selector_cardholder(self):
+        """Test building request with cardholder brand selector"""
+        row = pd.Series({
+            'test_id': 'ACC_BRAND_002',
+            'card_id': 'card1',
+            'brand_selector': 'CARDHOLDER',
+            'currency': '',     # ✅ Add missing currency
+            'amount': ''        # ✅ Add missing amount (empty for account verification)
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_account_verification_request(row, cards_df)
+        
+        assert request.card_payment_data.brand_selector == 'CARDHOLDER'

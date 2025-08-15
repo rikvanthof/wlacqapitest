@@ -89,3 +89,96 @@ class TestBuildReverseAuthorizationRequest:
             mock_clean.return_value = Mock()
             build_reverse_authorization_request(row)
             mock_clean.assert_called_once()
+
+    def test_build_partial_reversal_with_amount(self):
+        """Test building partial reversal request with specific amount"""
+        row = pd.Series({
+            'test_id': 'REV_PARTIAL_001',
+            'amount': 500,
+            'currency': 'EUR'
+        })
+        
+        request = build_reverse_authorization_request(row)
+        
+        # Should have reversal_amount for partial reversal
+        assert hasattr(request, 'reversal_amount')
+        assert request.reversal_amount.amount == 500
+        assert request.reversal_amount.currency_code == 'EUR'
+        assert request.reversal_amount.number_of_decimals == 2
+
+    def test_build_full_reversal_no_amount(self):
+        """Test building full reversal request without amount"""
+        row = pd.Series({
+            'test_id': 'REV_FULL_001'
+        })
+        
+        request = build_reverse_authorization_request(row)
+        
+        # Should NOT have reversal_amount for full reversal
+        assert not hasattr(request, 'reversal_amount') or request.reversal_amount is None
+
+    def test_build_full_reversal_empty_amount(self):
+        """Test building full reversal with empty amount"""
+        row = pd.Series({
+            'test_id': 'REV_FULL_002',
+            'amount': '',
+            'currency': 'EUR'
+        })
+        
+        request = build_reverse_authorization_request(row)
+        
+        # Should NOT have reversal_amount for empty amount
+        assert not hasattr(request, 'reversal_amount') or request.reversal_amount is None
+
+    def test_build_full_reversal_zero_amount(self):
+        """Test building full reversal with zero amount"""
+        row = pd.Series({
+            'test_id': 'REV_FULL_003',
+            'amount': 0,
+            'currency': 'EUR'
+        })
+        
+        request = build_reverse_authorization_request(row)
+        
+        # Should NOT have reversal_amount for zero amount
+        assert not hasattr(request, 'reversal_amount') or request.reversal_amount is None
+
+    def test_build_with_dcc_partial_reversal(self):
+        """Test building partial reversal with DCC"""
+        row = pd.Series({
+            'test_id': 'REV_DCC_001',
+            'amount': 1000,
+            'currency': 'GBP'
+        })
+        
+        # Mock DCC context
+        from unittest.mock import Mock
+        dcc_context = Mock()
+        dcc_context.rate_reference_id = 'rate_ref_123'
+        dcc_context.resulting_amount = {
+            'amount': 1150,
+            'currency_code': 'EUR',
+            'number_of_decimals': 2
+        }
+        dcc_context.inverted_exchange_rate = 0.869
+        
+        request = build_reverse_authorization_request(row, dcc_context)
+        
+        # Should use DCC amount for reversal
+        assert request.reversal_amount.amount == 1150
+        assert request.reversal_amount.currency_code == 'EUR'
+        assert hasattr(request, 'dynamic_currency_conversion')
+
+    def test_build_with_string_amount(self):
+        """Test building reversal with string amount"""
+        row = pd.Series({
+            'test_id': 'REV_STRING_001',
+            'amount': '750.00',  # String amount
+            'currency': 'USD'
+        })
+        
+        request = build_reverse_authorization_request(row)
+        
+        # Should handle string amounts correctly
+        assert request.reversal_amount.amount == 750
+        assert request.reversal_amount.currency_code == 'USD'

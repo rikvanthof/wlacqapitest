@@ -12,6 +12,7 @@ from ..avs import apply_avs_data
 from ..network_token import apply_network_token_data
 from ..threed_secure import apply_threed_secure_data
 from ..cardonfile import apply_cardonfile_data
+from ..merchant_data import apply_merchant_data
 from ..core.dcc_manager import DCCContext
 
 def apply_dcc_data_to_verification(request, dcc_context, row):
@@ -33,11 +34,14 @@ def apply_dcc_data_to_verification(request, dcc_context, row):
     
     return request
 
-def build_account_verification_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, previous_outputs=None, dcc_context=None):
+def build_account_verification_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
     """Build ApiAccountVerificationRequest for account verification calls with full feature support including DCC"""
     card_row = cards.loc[row['card_id']]
     request = ApiAccountVerificationRequest()
     
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
+
     # Build card data (same as create_payment)
     card_data = PlainCardData()
     card_data.card_number = str(card_row['card_number'])
@@ -62,6 +66,9 @@ def build_account_verification_request(row, cards, address=None, networktokens=N
         card_payment_data.cardholder_verification_method = row['cardholder_verification_method']
     else:
         card_payment_data.cardholder_verification_method = 'CARD_SECURITY_CODE'  # Default
+
+    if pd.notna(row.get('brand_selector')):
+        card_payment_data.brand_selector = row['brand_selector']
     
     # Set card payment data on request first (needed for advanced features)
     request.card_payment_data = card_payment_data

@@ -154,3 +154,84 @@ class TestBuildBalanceInquiryRequest:
             mock_clean.return_value = Mock()
             build_balance_inquiry_request(row, mock_cards_df)
             mock_clean.assert_called_once()
+
+    def test_build_with_brand_selector_merchant(self):
+        """Test building request with merchant brand selector"""
+        row = pd.Series({
+            'test_id': 'BAL_BRAND_001',
+            'card_id': 'card1',
+            'brand_selector': 'MERCHANT',
+            'currency': '',     # ✅ Add missing currency
+            'amount': ''        # ✅ Add missing amount (empty for balance inquiry)
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_balance_inquiry_request(row, cards_df)
+        
+        assert hasattr(request, 'card_payment_data')
+        assert hasattr(request.card_payment_data, 'brand_selector')
+        assert request.card_payment_data.brand_selector == 'MERCHANT'
+
+    def test_build_with_brand_selector_cardholder(self):
+        """Test building request with cardholder brand selector"""
+        row = pd.Series({
+            'test_id': 'BAL_BRAND_002',
+            'card_id': 'card1',
+            'brand_selector': 'CARDHOLDER',
+            'currency': '',     # ✅ Add missing currency
+            'amount': ''        # ✅ Add missing amount (empty for balance inquiry)
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_balance_inquiry_request(row, cards_df)
+        
+        assert request.card_payment_data.brand_selector == 'CARDHOLDER'
+
+    def test_build_with_merchant_data(self):
+        """Test building balance inquiry request with merchant data"""
+        row = pd.Series({
+            'test_id': 'BAL_MERCH_001',
+            'card_id': 'card1',
+            'currency': '',
+            'amount': '',
+            'merchant_data': 'HIGH_RISK'
+        })
+        
+        # Mock merchantdata DataFrame
+        merchantdata_df = pd.DataFrame({
+            'merchant_category_code': [7995],
+            'name': ['High Risk Business'],
+            'address': ['999 Risk Street'],
+            'postal_code': ['90210'],
+            'city': ['Beverly Hills'],
+            'state_code': ['CA'],
+            'country_code': ['US']
+        }, index=['HIGH_RISK'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_balance_inquiry_request(row, cards_df, merchantdata=merchantdata_df)
+        
+        # Should have merchant data
+        assert hasattr(request, 'merchant_data')
+        assert request.merchant_data.merchant_category_code == 7995
+        assert request.merchant_data.name == 'High Risk Business'
+        assert request.merchant_data.city == 'Beverly Hills'
+        assert request.merchant_data.state_code == 'CA'

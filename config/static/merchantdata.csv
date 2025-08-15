@@ -1,0 +1,11 @@
+merchant_id,merchant_category_code,name,address,postal_code,city,state_code,country_code
+DEFAULT_MERCHANT,5812,Test Restaurant Ltd,123 Main Street,12345,New York,NY,US
+EU_MERCHANT,5411,European Grocery Store,456 High Street,SW1A 1AA,London,,GB
+CA_MERCHANT,5999,Canadian Test Store,789 Maple Ave,K1A 0A6,Ottawa,ON,CA
+MINIMAL_MERCHANT,7999,Minimal Data Merchant,,,,,
+HIGH_RISK,7995,High Risk Business,999 Risk Street,90210,Beverly Hills,CA,US
+RESTAURANT_US,5812,American Diner,111 Food Street,10001,New York,NY,US
+RESTAURANT_EU,5812,French Bistro,222 Rue de la Paix,75001,Paris,,FR
+GAS_STATION,5541,Quick Fuel Station,333 Highway Blvd,77001,Houston,TX,US
+GROCERY_STORE,5411,Fresh Market,444 Grocery Lane,60601,Chicago,IL,US
+ONLINE_RETAIL,5399,E-Commerce Store,555 Digital Ave,94102,San Francisco,CA,US

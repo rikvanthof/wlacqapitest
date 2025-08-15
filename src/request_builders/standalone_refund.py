@@ -9,6 +9,7 @@ from worldline.acquiring.sdk.v1.domain.payment_references import PaymentReferenc
 from worldline.acquiring.sdk.v1.domain.dcc_data import DccData
 from ..utils import generate_random_string, clean_request
 from ..network_token import apply_network_token_data
+from ..merchant_data import apply_merchant_data
 
 def apply_dcc_data_to_standalone_refund(request, dcc_context, row):
     """Apply DCC data to standalone refund request"""
@@ -24,7 +25,7 @@ def apply_dcc_data_to_standalone_refund(request, dcc_context, row):
     request.dynamic_currency_conversion = dcc_data
     return request
 
-def build_standalone_refund_request(row, cards_df, dcc_context=None):
+def build_standalone_refund_request(row, cards_df, merchantdata=None, dcc_context=None):
     """Build ApiRefundRequest for standalone refund calls with DCC support"""
     card_row = cards_df.loc[row['card_id']]
     request = ApiRefundRequest()
@@ -45,7 +46,7 @@ def build_standalone_refund_request(row, cards_df, dcc_context=None):
     card_payment_data = CardPaymentDataForRefund()
     card_payment_data.card_data = card_data
     card_payment_data.brand = card_row['card_brand']
-    
+
     # Set required refund fields
     if pd.notna(row.get('capture_immediately')):
         card_payment_data.capture_immediately = str(row['capture_immediately']).upper() == 'TRUE'
@@ -61,6 +62,9 @@ def build_standalone_refund_request(row, cards_df, dcc_context=None):
         card_payment_data.cardholder_verification_method = row['cardholder_verification_method']
     else:
         card_payment_data.cardholder_verification_method = 'CARD_SECURITY_CODE'  # Default
+
+    if pd.notna(row.get('brand_selector')):
+        card_payment_data.brand_selector = row['brand_selector']
     
     request.card_payment_data = card_payment_data
     
@@ -106,5 +110,8 @@ def build_standalone_refund_request(row, cards_df, dcc_context=None):
     # Add DCC data if available
     if dcc_context and dcc_context.rate_reference_id:
         apply_dcc_data_to_standalone_refund(request, dcc_context, row)
+
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
     
     return clean_request(request)

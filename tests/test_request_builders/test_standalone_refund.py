@@ -51,20 +51,21 @@ class TestBuildStandaloneRefundRequest:
             'currency': 'GBP',
             'card_id': 'card1'
         })
-        
+
         # Mock DCC context
         dcc_context = Mock()
         dcc_context.rate_reference_id = 'rate_ref_456'
         dcc_context.resulting_amount = {
             'amount': 1150,
-            'currency_code': 'EUR', 
+            'currency_code': 'EUR',
             'number_of_decimals': 2
         }
         dcc_context.inverted_exchange_rate = 0.869
-        
+
         with patch('src.request_builders.standalone_refund.generate_random_string', return_value='ref456'):
-            request = build_standalone_refund_request(row, mock_cards_df, dcc_context)
-            
+            # ✅ FIX: Use correct parameter name for new signature
+            request = build_standalone_refund_request(row, mock_cards_df, merchantdata=None, dcc_context=dcc_context)
+
             # Verify main amount uses DCC resulting amount
             assert request.amount.amount == 1150
             assert request.amount.currency_code == 'EUR'
@@ -145,3 +146,84 @@ class TestBuildStandaloneRefundRequest:
             mock_clean.return_value = Mock()
             build_standalone_refund_request(row, mock_cards_df)
             mock_clean.assert_called_once()
+
+    def test_build_with_brand_selector_merchant(self):
+        """Test building request with merchant brand selector"""
+        row = pd.Series({
+            'test_id': 'REF_BRAND_001',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 500,
+            'brand_selector': 'MERCHANT'
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_standalone_refund_request(row, cards_df)
+        
+        assert hasattr(request, 'card_payment_data')
+        assert hasattr(request.card_payment_data, 'brand_selector')
+        assert request.card_payment_data.brand_selector == 'MERCHANT'
+
+    def test_build_with_brand_selector_cardholder(self):
+        """Test building request with cardholder brand selector"""
+        row = pd.Series({
+            'test_id': 'REF_BRAND_002',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 500,
+            'brand_selector': 'CARDHOLDER'
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_standalone_refund_request(row, cards_df)
+        
+        assert request.card_payment_data.brand_selector == 'CARDHOLDER'
+
+    def test_build_with_merchant_data(self):
+        """Test building standalone refund request with merchant data"""
+        row = pd.Series({
+            'test_id': 'REF_MERCH_001',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 500,
+            'merchant_data': 'EU_MERCHANT'
+        })
+        
+        # Mock merchantdata DataFrame
+        merchantdata_df = pd.DataFrame({
+            'merchant_category_code': [5411],
+            'name': ['European Grocery Store'],
+            'address': ['456 High Street'],
+            'postal_code': ['SW1A 1AA'],
+            'city': ['London'],
+            'state_code': [None],
+            'country_code': ['GB']
+        }, index=['EU_MERCHANT'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_standalone_refund_request(row, cards_df, merchantdata=merchantdata_df)
+        
+        # Should have merchant data
+        assert hasattr(request, 'merchant_data')
+        assert request.merchant_data.merchant_category_code == 5411
+        assert request.merchant_data.name == 'European Grocery Store'
+        assert request.merchant_data.country_code == 'GB'

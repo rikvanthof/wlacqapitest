@@ -13,7 +13,8 @@ from ..avs import apply_avs_data
 from ..network_token import apply_network_token_data
 from ..threed_secure import apply_threed_secure_data
 from ..cardonfile import apply_cardonfile_data
-from ..core.dcc_manager import DCCContext  # ✅ NEW IMPORT
+from ..core.dcc_manager import DCCContext
+from ..merchant_data import apply_merchant_data  
 
 def apply_dcc_data(request, dcc_context, row):
     """Apply DCC (Dynamic Currency Conversion) data to payment request"""
@@ -34,11 +35,15 @@ def apply_dcc_data(request, dcc_context, row):
     
     return request
 
-def build_create_payment_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, previous_outputs=None, dcc_context=None):
+def build_create_payment_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
     """Build ApiPaymentRequest for create_payment calls with full feature support including DCC"""
     card_row = cards.loc[row['card_id']]
     request = ApiPaymentRequest()
     
+    # Add Merchant data if specified
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
+
     # Build card data
     card_data = PlainCardData()
     card_data.card_number = str(card_row['card_number'])
@@ -62,6 +67,8 @@ def build_create_payment_request(row, cards, address=None, networktokens=None, t
         card_payment_data.card_entry_mode = row['card_entry_mode']
     if pd.notna(row.get('cardholder_verification_method')):
         card_payment_data.cardholder_verification_method = row['cardholder_verification_method']
+    if pd.notna(row.get('brand_selector')):
+        card_payment_data.brand_selector = row['brand_selector']
     
     # Set card payment data on request first (needed for network tokens and DCC)
     request.card_payment_data = card_payment_data

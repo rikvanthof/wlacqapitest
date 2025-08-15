@@ -12,6 +12,7 @@ from ..avs import apply_avs_data
 from ..network_token import apply_network_token_data
 from ..threed_secure import apply_threed_secure_data
 from ..cardonfile import apply_cardonfile_data
+from ..merchant_data import apply_merchant_data
 from ..core.dcc_manager import DCCContext
 
 def apply_dcc_data_to_balance_inquiry(request, dcc_context, row):
@@ -33,10 +34,14 @@ def apply_dcc_data_to_balance_inquiry(request, dcc_context, row):
     
     return request
 
-def build_balance_inquiry_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, previous_outputs=None, dcc_context=None):
+def build_balance_inquiry_request(row, cards, address=None, networktokens=None, threeds=None, cardonfile=None, merchantdata=None, previous_outputs=None, dcc_context=None):
     """Build ApiBalanceInquiryRequest for balance inquiry calls with full feature support including DCC"""
     card_row = cards.loc[row['card_id']]
     request = ApiBalanceInquiryRequest()
+
+    # Add Merchant data if specified
+    if pd.notna(row.get('merchant_data')) and merchantdata is not None:
+        apply_merchant_data(request, row, merchantdata)
     
     # Build card data (same as create_payment/account_verification)
     card_data = PlainCardData()
@@ -62,6 +67,9 @@ def build_balance_inquiry_request(row, cards, address=None, networktokens=None, 
         card_payment_data.cardholder_verification_method = row['cardholder_verification_method']
     else:
         card_payment_data.cardholder_verification_method = 'CARD_SECURITY_CODE'  # Default
+    
+    if pd.notna(row.get('brand_selector')):
+        card_payment_data.brand_selector = row['brand_selector']
     
     # Set card payment data on request first (needed for advanced features)
     request.card_payment_data = card_payment_data

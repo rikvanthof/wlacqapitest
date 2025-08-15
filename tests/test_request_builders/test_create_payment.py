@@ -460,3 +460,289 @@ class TestBuildCreatePaymentRequest:
         build_create_payment_request(row, mock_cards_df, None, mock_networktokens_df)
         
         mock_clean_request.assert_called_once()
+
+    def test_build_with_brand_selector_merchant(self):
+        """Test building request with merchant brand selector"""
+        row = pd.Series({
+            'test_id': 'PAY_BRAND_001',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 1000,
+            'brand_selector': 'MERCHANT'
+        })
+        
+        # Create mock cards DataFrame
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        with patch('src.request_builders.create_payment.generate_random_string', return_value='pay123'):
+            request = build_create_payment_request(row, cards_df)
+            
+            assert hasattr(request, 'card_payment_data')
+            assert hasattr(request.card_payment_data, 'brand_selector')
+            assert request.card_payment_data.brand_selector == 'MERCHANT'
+
+    def test_build_with_brand_selector_cardholder(self):
+        """Test building request with cardholder brand selector"""
+        row = pd.Series({
+            'test_id': 'PAY_BRAND_002',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 1000,
+            'brand_selector': 'CARDHOLDER'
+        })
+        
+        # Create mock cards DataFrame
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        with patch('src.request_builders.create_payment.generate_random_string', return_value='pay456'):
+            request = build_create_payment_request(row, cards_df)
+            
+            assert request.card_payment_data.brand_selector == 'CARDHOLDER'
+
+    def test_build_without_brand_selector(self):
+        """Test building request without brand selector (should use API default)"""
+        row = pd.Series({
+            'test_id': 'PAY_BRAND_003',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 1000
+            # No brand_selector field
+        })
+        
+        # Create mock cards DataFrame
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        with patch('src.request_builders.create_payment.generate_random_string', return_value='pay789'):
+            request = build_create_payment_request(row, cards_df)
+            
+            # Should not have brand_selector property or it should be None
+            assert not hasattr(request.card_payment_data, 'brand_selector') or \
+                   request.card_payment_data.brand_selector is None
+            
+    def test_build_with_sca_exemption_only(self):
+        """Test building request with SCA exemption only (no 3DS)"""
+        row = pd.Series({
+            'test_id': 'SCA_001',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 100,
+            'threed_secure_data': 'LVP_NO3DS'
+        })
+        
+        # Mock threeds DataFrame matching your CSV
+        threeds_df = pd.DataFrame({
+            'three_d_secure_type': [None],
+            'authentication_value': [None],
+            'eci': [None],
+            'version': [None],
+            'sca_exemption_requested': ['LOW_VALUE_PAYMENT']
+        }, index=['LVP_NO3DS'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_create_payment_request(row, cards_df, threeds=threeds_df)
+        
+        # Should have eCommerce data with exemption but no 3DS
+        assert hasattr(request.card_payment_data, 'ecommerce_data')
+        assert hasattr(request.card_payment_data.ecommerce_data, 'sca_exemption_request')
+        assert request.card_payment_data.ecommerce_data.sca_exemption_request == 'LOW_VALUE_PAYMENT'
+        assert not hasattr(request.card_payment_data.ecommerce_data, 'three_d_secure') or \
+               request.card_payment_data.ecommerce_data.three_d_secure is None
+
+    def test_build_with_3ds_and_sca_exemption(self):
+        """Test building request with both 3DS and SCA exemption"""
+        row = pd.Series({
+            'test_id': 'SCA_002',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 100,
+            'threed_secure_data': 'VISA_FULL_DELEGATION'
+        })
+        
+        # Mock threeds DataFrame matching your CSV
+        threeds_df = pd.DataFrame({
+            'three_d_secure_type': ['THREE_DS'],
+            'authentication_value': ['AAABBEg0VhI0VniQEjRWAAAAAAA='],
+            'eci': ['05'],
+            'version': ['2.2.0'],
+            'sca_exemption_requested': ['SCA_DELEGATION']
+        }, index=['VISA_FULL_DELEGATION'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_create_payment_request(row, cards_df, threeds=threeds_df)
+        
+        # Should have both 3DS and exemption
+        assert hasattr(request.card_payment_data, 'ecommerce_data')
+        assert hasattr(request.card_payment_data.ecommerce_data, 'three_d_secure')
+        assert hasattr(request.card_payment_data.ecommerce_data, 'sca_exemption_request')
+        assert request.card_payment_data.ecommerce_data.sca_exemption_request == 'SCA_DELEGATION'
+        assert request.card_payment_data.ecommerce_data.three_d_secure.eci == '05'
+
+    def test_build_with_3ds_only_no_exemption(self):
+        """Test building request with 3DS only (no exemption)"""
+        row = pd.Series({
+            'test_id': 'SCA_003',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 100,
+            'threed_secure_data': 'VISA_FULL'
+        })
+        
+        # Mock threeds DataFrame matching your CSV  
+        threeds_df = pd.DataFrame({
+            'three_d_secure_type': ['THREE_DS'],
+            'authentication_value': ['AAABBEg0VhI0VniQEjRWAAAAAAA='],
+            'eci': ['05'],
+            'version': ['2.2.0'],
+            'sca_exemption_requested': [None]
+        }, index=['VISA_FULL'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_create_payment_request(row, cards_df, threeds=threeds_df)
+        
+        # Should have 3DS but no exemption
+        assert hasattr(request.card_payment_data, 'ecommerce_data')
+        assert hasattr(request.card_payment_data.ecommerce_data, 'three_d_secure')
+        assert request.card_payment_data.ecommerce_data.three_d_secure.eci == '05'
+        assert not hasattr(request.card_payment_data.ecommerce_data, 'sca_exemption_request') or \
+               request.card_payment_data.ecommerce_data.sca_exemption_request is None
+        
+    def test_build_with_merchant_data_complete(self):
+        """Test building request with complete merchant data"""
+        row = pd.Series({
+            'test_id': 'MERCH_001',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 1000,
+            'merchant_data': 'DEFAULT_MERCHANT'
+        })
+        
+        # Mock merchantdata DataFrame
+        merchantdata_df = pd.DataFrame({
+            'merchant_category_code': [5812],
+            'name': ['Test Restaurant Ltd'],
+            'address': ['123 Main Street'],
+            'postal_code': ['12345'],
+            'city': ['New York'],
+            'state_code': ['NY'],
+            'country_code': ['US']
+        }, index=['DEFAULT_MERCHANT'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_create_payment_request(row, cards_df, merchantdata=merchantdata_df)
+        
+        # Should have merchant data with all fields
+        assert hasattr(request, 'merchant_data')
+        assert request.merchant_data.merchant_category_code == 5812
+        assert request.merchant_data.name == 'Test Restaurant Ltd'
+        assert request.merchant_data.address == '123 Main Street'
+        assert request.merchant_data.postal_code == '12345'
+        assert request.merchant_data.city == 'New York'
+        assert request.merchant_data.state_code == 'NY'
+        assert request.merchant_data.country_code == 'US'
+
+    def test_build_with_merchant_data_minimal(self):
+        """Test building request with minimal merchant data"""
+        row = pd.Series({
+            'test_id': 'MERCH_002',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 1000,
+            'merchant_data': 'MINIMAL_MERCHANT'
+        })
+        
+        # Mock merchantdata DataFrame with minimal data
+        merchantdata_df = pd.DataFrame({
+            'merchant_category_code': [7999],
+            'name': ['Minimal Data Merchant'],
+            'address': [None],
+            'postal_code': [None],
+            'city': [None],
+            'state_code': [None],
+            'country_code': [None]
+        }, index=['MINIMAL_MERCHANT'])
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_create_payment_request(row, cards_df, merchantdata=merchantdata_df)
+        
+        # Should have only required fields
+        assert hasattr(request, 'merchant_data')
+        assert request.merchant_data.merchant_category_code == 7999
+        assert request.merchant_data.name == 'Minimal Data Merchant'
+        # Optional fields should not be set or be None
+        assert not hasattr(request.merchant_data, 'address') or request.merchant_data.address is None
+
+    def test_build_without_merchant_data(self):
+        """Test building request without merchant data"""
+        row = pd.Series({
+            'test_id': 'MERCH_003',
+            'card_id': 'card1',
+            'currency': 'EUR',
+            'amount': 1000
+            # No merchant_data field
+        })
+        
+        cards_df = pd.DataFrame({
+            'card_number': ['4111111111111111'],
+            'expiry_date': ['1225'],
+            'card_brand': ['VISA'],
+            'card_sequence_number': [None],
+            'card_security_code': ['123']
+        }, index=['card1'])
+        
+        request = build_create_payment_request(row, cards_df)
+        
+        # Should not have merchant_data
+        assert not hasattr(request, 'merchant_data') or request.merchant_data is None

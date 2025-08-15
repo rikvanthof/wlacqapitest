@@ -22,8 +22,8 @@ def build_reverse_authorization_request(row, dcc_context=None):
     request.operation_id = row['test_id'] + ':' + generate_random_string(32)
     request.transaction_timestamp = pd.Timestamp.now(tz=datetime.timezone.utc).replace(microsecond=0).to_pydatetime()
     
-    # Set reversal amount if specified, otherwise full reversal
-    if 'amount' in row and pd.notna(row['amount']) and row['amount'] > 0:
+    # ✅ ENHANCED: Set reversal amount if specified (consistent with other builders)
+    if pd.notna(row.get('amount')) and row.get('amount') != '' and float(row['amount']) > 0:
         # Use DCC resulting amount for main transaction amount if available
         if dcc_context and dcc_context.resulting_amount:
             amount_data = AmountData()
@@ -34,7 +34,7 @@ def build_reverse_authorization_request(row, dcc_context=None):
         else:
             # Use test amount (merchant currency)
             amount_data = AmountData()
-            amount_data.amount = int(row['amount'])
+            amount_data.amount = int(float(row['amount']))  # ✅ Added float() conversion
             amount_data.currency_code = row['currency']
             amount_data.number_of_decimals = 2
             request.reversal_amount = amount_data
@@ -42,10 +42,12 @@ def build_reverse_authorization_request(row, dcc_context=None):
     # Add DCC fields if available
     if dcc_context and dcc_context.rate_reference_id:
         dcc_data = DccData()
-        dcc_data.amount = int(row['amount']) if 'amount' in row and pd.notna(row['amount']) else None
-        dcc_data.currency_code = row['currency']
-        dcc_data.number_of_decimals = 2
-        dcc_data.conversion_rate = dcc_context.inverted_exchange_rate
-        request.dynamic_currency_conversion = dcc_data
+        # ✅ ENHANCED: Better amount handling for DCC
+        if pd.notna(row.get('amount')) and row.get('amount') != '':
+            dcc_data.amount = int(float(row['amount']))
+            dcc_data.currency_code = row['currency']
+            dcc_data.number_of_decimals = 2
+            dcc_data.conversion_rate = dcc_context.inverted_exchange_rate
+            request.dynamic_currency_conversion = dcc_data
     
     return clean_request(request)

@@ -58,6 +58,18 @@ def build_capture_payment_request(row, dcc_context=None):
             amount_data.number_of_decimals = 2
             request.amount = amount_data
     
+    # ✅ NEW: Set isFinal flag for partial captures
+    if pd.notna(row.get('is_final')):
+        # Convert string boolean to actual boolean
+        if isinstance(row['is_final'], str):
+            request.is_final = row['is_final'].lower() in ('true', '1', 'yes')
+        else:
+            request.is_final = bool(row['is_final'])
+    
+    # ✅ NEW: Set capture sequence number if provided  
+    if pd.notna(row.get('capture_sequence_number')):
+        request.capture_sequence_number = int(row['capture_sequence_number'])
+    
     # ✅ FIXED: Add DCC data with row parameter
     if dcc_context and dcc_context.rate_reference_id:
         apply_dcc_data_to_capture(request, dcc_context, row)

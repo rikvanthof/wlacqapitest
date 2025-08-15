@@ -98,3 +98,100 @@ class TestBuildCapturePaymentRequest:
         
         # Full capture should not have amount (captures full authorized amount)
         assert not hasattr(request, 'amount') or request.amount is None
+
+    def test_build_with_is_final_true(self):
+        """Test building request with isFinal = true"""
+        row = pd.Series({
+            'test_id': 'CAP008',
+            'amount': 1500,
+            'currency': 'EUR',
+            'is_final': 'true'  # String boolean
+        })
+        
+        request = build_capture_payment_request(row)
+        
+        # Should have amount and isFinal flag
+        assert hasattr(request, 'amount')
+        assert request.amount.amount == 1500
+        assert request.amount.currency_code == 'EUR'
+        assert hasattr(request, 'is_final')
+        assert request.is_final == True
+
+    def test_build_with_is_final_false(self):
+        """Test building request with isFinal = false"""
+        row = pd.Series({
+            'test_id': 'CAP009',
+            'amount': 500,
+            'currency': 'USD',
+            'is_final': False  # Boolean false
+        })
+        
+        request = build_capture_payment_request(row)
+        
+        assert hasattr(request, 'is_final')
+        assert request.is_final == False
+
+    def test_build_with_string_boolean_variations(self):
+        """Test different string boolean variations for isFinal"""
+        test_cases = [
+            ('true', True),
+            ('True', True), 
+            ('1', True),
+            ('yes', True),
+            ('false', False),
+            ('0', False),
+            ('no', False)
+        ]
+        
+        for string_val, expected_bool in test_cases:
+            row = pd.Series({
+                'test_id': f'CAP_BOOL_{string_val}',
+                'is_final': string_val
+            })
+            
+            request = build_capture_payment_request(row)
+            assert hasattr(request, 'is_final')
+            assert request.is_final == expected_bool
+
+    def test_build_with_capture_sequence_number(self):
+        """Test building request with capture sequence number"""
+        row = pd.Series({
+            'test_id': 'CAP010',
+            'amount': 750,
+            'currency': 'EUR',
+            'capture_sequence_number': 2,
+            'is_final': False
+        })
+        
+        request = build_capture_payment_request(row)
+        
+        assert hasattr(request, 'capture_sequence_number')
+        assert request.capture_sequence_number == 2
+        assert request.is_final == False
+
+    def test_build_with_dcc_and_final(self):
+        """Test building request with DCC and isFinal"""
+        row = pd.Series({
+            'test_id': 'CAP011',
+            'amount': 1000,
+            'currency': 'GBP',
+            'is_final': True
+        })
+        
+        # Mock DCC context
+        dcc_context = Mock()
+        dcc_context.rate_reference_id = 'rate_ref_123'
+        dcc_context.resulting_amount = {
+            'amount': 1150,
+            'currency_code': 'EUR',
+            'number_of_decimals': 2
+        }
+        dcc_context.inverted_exchange_rate = 0.869
+        
+        request = build_capture_payment_request(row, dcc_context)
+        
+        # Should use DCC amount and have isFinal flag
+        assert request.amount.amount == 1150
+        assert request.amount.currency_code == 'EUR'
+        assert request.is_final == True
+        assert hasattr(request, 'dynamic_currency_conversion')
