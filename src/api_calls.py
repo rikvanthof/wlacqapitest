@@ -394,3 +394,14 @@ def ping_call(client):
     except Exception as e:
         logger.error(f"Ping failed - API connectivity issue: {e}")
         raise
+
+def technical_reversal_call(client, acquirer_id, merchant_id, original_operation_id, request):
+    """Execute technical reversal API call"""
+    try:
+        logger.info(f"Executing technical reversal - Acquirer: {acquirer_id}, Original Operation: {original_operation_id}")
+        response = client.v1().acquirer(acquirer_id).merchant(merchant_id).operations(original_operation_id).reverse().create(request)
+        logger.info(f"Technical reversal successful - Original Operation: {original_operation_id}")
+        return response
+    except Exception as e:
+        logger.error(f"Technical reversal failed - Original Operation: {original_operation_id}, Error: {e}")
+        raise
