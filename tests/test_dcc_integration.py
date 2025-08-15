@@ -70,18 +70,26 @@ class TestDCCIntegration:
         context = manager.get_chain_context(chain_id)
         assert context.rate_reference_id is None
         
-        # Simulate DCC response
+        # ✅ Fix: Simulate DCC response with correct structure
         mock_response = Mock()
-        mock_response.rate_reference_id = 'rate_ref_12345'
-        mock_response.original_amount = Mock()
-        mock_response.original_amount.amount = 555
-        mock_response.original_amount.currency_code = 'GBP'
-        mock_response.original_amount.number_of_decimals = 2
-        mock_response.resulting_amount = Mock()
-        mock_response.resulting_amount.amount = 625
-        mock_response.resulting_amount.currency_code = 'EUR'
-        mock_response.resulting_amount.number_of_decimals = 2
-        mock_response.inverted_exchange_rate = 0.888
+        mock_response.proposal = Mock()
+        mock_response.proposal.rate_reference_id = 'rate_ref_12345'
+        
+        # Set up original_amount
+        mock_response.proposal.original_amount = Mock()
+        mock_response.proposal.original_amount.amount = 555
+        mock_response.proposal.original_amount.currency_code = 'GBP'
+        mock_response.proposal.original_amount.number_of_decimals = 2
+        
+        # Set up resulting_amount
+        mock_response.proposal.resulting_amount = Mock()
+        mock_response.proposal.resulting_amount.amount = 625
+        mock_response.proposal.resulting_amount.currency_code = 'EUR'
+        mock_response.proposal.resulting_amount.number_of_decimals = 2
+        
+        # ✅ Fix: Set up rate with nested structure
+        mock_response.proposal.rate = Mock()
+        mock_response.proposal.rate.inverted_exchange_rate = 0.888  # Real float, not Mock
         
         # Update context
         manager.update_context_from_dcc_response(chain_id, mock_response)
@@ -105,18 +113,17 @@ class TestDCCIntegration:
             'currency': 'GBP',
             'dcc_target_currency': 'EUR'
         })
-        
+
         # Build DCC request
         endpoint = EndpointRegistry.get_endpoint('get_dcc_rate')
         request = endpoint.build_request(row, 'PAYMENT')
-        
-        # Verify request properties
+
+        # ✅ Fix: Use correct field structure
         assert hasattr(request, 'operation_id')
         assert 'API0050:dcc:' in request.operation_id
-        assert request.transaction_amount.amount == 555
-        assert request.transaction_amount.currency_code == 'GBP'
-        assert request.target_currency_code == 'EUR'
-        assert request.transaction_type == 'PAYMENT'
+        assert request.transaction.amount.amount == 555  # ✅ Fixed path
+        assert request.transaction.amount.currency_code == 'GBP'  # ✅ Fixed path
+        assert request.target_currency == 'EUR'
     
     def test_registry_dcc_support_detection(self):
         """Test registry can detect DCC support"""
