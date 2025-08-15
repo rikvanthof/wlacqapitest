@@ -1,173 +1,284 @@
-# Payment API Testing Framework
+# Payment API Test Framework
 
-**Comprehensive test automation for Worldline Acquiring API (v1.3.0)**
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](CHANGELOG.md)
+[![Python](https://img.shields.io/badge/python-3.9+-green.svg)](requirements.txt)
+[![Tests](https://img.shields.io/badge/tests-108%2F108%20passing-brightgreen.svg)](#testing)
+[![Documentation](https://img.shields.io/badge/docs-comprehensive-blue.svg)](documentation/)
 
-A production-ready testing framework supporting advanced payment features, chain execution, parallel processing, and comprehensive validation with CSV-driven configuration.
+A comprehensive Python testing framework for Worldline Acquiring payment APIs, supporting complex payment workflows, Dynamic Currency Conversion (DCC), and advanced payment features.
 
-## Features
-
-### Payment Types Supported
-- Create Payment - Authorization and capture
-- Increment Payment - Authorization adjustments  
-- Capture Payment - Settlement processing
-- Refund Payment - Full and partial refunds
-- Get Payment/Refund - Status inquiries
-
-### Advanced Payment Features
-- Address Verification (AVS) - Cardholder address validation
-- 3D Secure Authentication - Strong customer authentication
-- Network Token Payments - Apple Pay, Google Pay support
-- Card-on-File (UCOF) - Initial and subsequent transactions
-- Chain Execution - Multi-step payment scenarios
-- Tag-based Filtering - Targeted test execution
-
-### Testing Capabilities
-- Comprehensive Assertions - Response validation engine
-- Parallel Execution - Configurable thread-based testing
-- CSV-driven Configuration - Environment and test management
-- Results Dashboard - Real-time test monitoring
-- Database Integration - SQLite results storage
-
-## Quick Setup
-
-### 1. Environment Setup
-
-Clone repository and create virtual environment:
+## 🚀 Quick Start
 
 ```bash
+# Clone and setup
+git clone <repository-url>
+cd wlacqapitest
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-```
 
-### 2. Configuration
+# Configure credentials
+cp config/credentials/secrets.csv.template config/credentials/secrets.csv
+# Edit with your API credentials
 
-Configure your test environment in the config directory with these files:
-- environments.csv - API endpoints and credentials
-- cards.csv - Test card configurations
-- merchants.csv - Merchant account details
-- address.csv - AVS test addresses
-- networktokens.csv - Apple Pay/Google Pay tokens
-- threeddata.csv - 3D Secure test data
-- cardonfile.csv - Card-on-File configurations
-
-### 3. Run Tests
-
-Basic execution:
-```bash
-python -m src.main
-```
-
-With specific test suite:
-```bash
+# Run smoke tests
 python -m src.main --tests smoke_tests.csv
+
+# Run with DCC
+python -m src.main --tests smoke_tests.csv --tags dcc --verbose
 ```
 
-With tags:
+**📖 New to the framework?** Start with the [User Guide](documentation/user-guide.md) | **🔧 Setting up?** See [Environment Setup](documentation/environment-setup.md)
+
+---
+
+## ✨ Key Features
+
+### 💳 **Comprehensive Payment Support**
+- **Core Operations**: Create, capture, increment, and refund payments
+- **Chain Workflows**: Multi-step payment scenarios with shared context
+- **Advanced Features**: 3D Secure, AVS, Network Tokens, Card-on-File
+
+### 🌍 **Dynamic Currency Conversion (DCC)** ⭐ *New in v2.1.0*
+- Automatic currency conversion rate inquiry
+- Multi-currency payment chain support
+- Real-time exchange rate integration
+- Consistent DCC handling across all payment types
+
+### 🔧 **Developer-Friendly Architecture**
+- **Plugin System**: Easy endpoint extension with `@register_endpoint`
+- **Request Builders**: Clean, testable request construction
+- **Configuration-Driven**: CSV-based test definitions
+- **Comprehensive Testing**: 108 unit tests with full coverage
+
+### 📊 **Advanced Testing Capabilities**
+- **Tag-Based Filtering**: Run specific test subsets (`--tags dcc,3ds`)
+- **Parallel Execution**: Configurable multi-threading
+- **Rich Reporting**: CSV, database, and console output
+- **Detailed Logging**: Comprehensive execution tracking
+
+---
+
+## 📋 Quick Navigation
+
+| I want to... | Go here |
+|--------------|---------|
+| **Run tests immediately** | [User Guide](documentation/user-guide.md) |
+| **Set up the environment** | [Environment Setup](documentation/environment-setup.md) |
+| **Configure test scenarios** | [Configuration Guide](documentation/configuration-guide.md) |
+| **Understand CLI options** | [CLI Reference](documentation/cli-reference.md) |
+| **Write custom tests** | [Testing Guide](documentation/testing-guide.md) |
+| **Extend the framework** | [Developer Guide](documentation/developer-guide.md) |
+| **Understand the architecture** | [Architecture Guide](documentation/architecture-guide.md) |
+| **See what's new** | [Changelog](CHANGELOG.md) |
+
+---
+
+## 🏗️ Project Structure
+
+```
+wlacqapitest/
+├── 📚 documentation/          # Comprehensive guides
+├── ⚙️  config/                # Test configurations
+│   ├── static/               # Cards, merchants, environments
+│   ├── credentials/          # API credentials (secure)
+│   └── test_suites/          # Test definitions
+├── 🔧 src/                   # Core framework
+│   ├── core/                 # Core managers (DCC, registry, etc.)
+│   ├── endpoints/            # API endpoint implementations
+│   ├── request_builders/     # Request construction logic
+│   └── config/               # Configuration management
+├── 🧪 tests/                 # Unit test suite
+├── 📊 outputs/               # Test results and logs
+└── 📜 scripts/               # Utility scripts
+```
+
+---
+
+## 💡 Usage Examples
+
+### Basic Payment Test
 ```bash
-python -m src.main --tags ucof,3ds
+# Run all smoke tests
+python -m src.main --tests smoke_tests.csv
+
+# Run specific test
+python -m src.main --tests smoke_tests.csv --test-ids API0001
 ```
 
-Parallel execution:
+### Advanced Scenarios
 ```bash
-python -m src.main --threads 4
+# DCC-enabled payment chain
+python -m src.main --tests smoke_tests.csv --tags dcc
+
+# 3D Secure payments
+python -m src.main --tests smoke_tests.csv --tags 3ds
+
+# Parallel execution
+python -m src.main --tests smoke_tests.csv --threads 4
+
+# Verbose debugging
+python -m src.main --tests smoke_tests.csv --verbose --log-level DEBUG
 ```
 
-## Usage Examples
-
-### Feature-Specific Testing
-
-Test Card-on-File scenarios:
-```bash
-python -m src.main --tags ucof
-```
-
-Test 3D Secure flows:
-```bash
-python -m src.main --tags 3ds
-```
-
-Test Network Token payments:
-```bash
-python -m src.main --tags applepay,googlepay
-```
-
-## Results & Monitoring
-
-### Results Output
-- CSV Reports: outputs/results.csv
-- Database: outputs/local.db  
-- Logs: Console output with configurable verbosity
-
-### Dashboard
-Launch interactive dashboard:
-```bash
-python src/dashboard.py
-```
-Then open browser to http://localhost:8050
-
-## Project Structure
-
-```
-AcquiringAPI_Tester/
-├── config/
-├── src/
-├── outputs/
-├── tests/
-└── requirements.txt
-```
-
-## Configuration Guide
-
-### Test CSV Format
-Basic test definition with essential columns:
-
+### Test Configuration
 ```csv
-chain_id,step_order,call_type,test_id,tags,card_id,amount,currency
-chain1,1,create_payment,TEST001,smoke,visa_card,100,GBP
-chain1,2,capture_payment,TEST002,smoke,,,,
+chain_id,test_id,call_type,amount,currency,dcc_target_currency,tags
+chain1,API0001,create_payment,1000,GBP,EUR,"dcc,smoke"
+chain1,API0002,capture_payment,500,GBP,EUR,"dcc,smoke"
 ```
 
-### Environment Configuration
-Environment setup with connection details:
+---
 
-```csv
-env,integrator,endpoint_host,client_id,client_secret
-test,Test Integrator,api.test.com,test-client,test-secret
+## 🔥 What's New in v2.1.0
+
+### 🌍 Dynamic Currency Conversion
+- **Complete DCC Integration**: Automatic rate inquiry and conversion
+- **Chain Context**: DCC data flows seamlessly across payment steps
+- **Real-world Testing**: Multi-currency scenarios with actual exchange rates
+
+### 🏗️ Enhanced Architecture
+- **Request Builder Pattern**: Centralized, testable request construction
+- **Plugin Registry**: Easy endpoint extension without core changes
+- **Improved Documentation**: Comprehensive guides for all user types
+
+**📖 Full details in [Changelog](CHANGELOG.md)**
+
+---
+
+## 🛠️ For Developers
+
+### Adding New Endpoints
+```python
+@register_endpoint('new_endpoint')
+class NewEndpoint(EndpointInterface):
+    @staticmethod
+    def build_request(row, **kwargs):
+        return build_new_request(row, **kwargs)
+    
+    @staticmethod
+    def supports_dcc() -> bool:
+        return True
 ```
 
-## Card-on-File (UCOF) Testing
-
-### Initial COF Transaction
-```csv
-chain_id,step_order,call_type,test_id,tags,card_on_file_data
-ucof1,1,create_payment,INITIAL_COF,ucof,FIRSTUCOF-CIT
+### Creating Request Builders
+```python
+def build_new_request(row, dcc_context=None):
+    request = ApiNewRequest()
+    # Build request logic
+    if dcc_context:
+        apply_dcc_data(request, dcc_context, row)
+    return clean_request(request)
 ```
 
-### Subsequent COF Transaction
-```csv
-chain_id,step_order,call_type,test_id,tags,card_on_file_data
-ucof1,2,create_payment,SUBSEQUENT_COF,ucof,SUBSEQUENTUCOF-CIT
+**📖 Complete development guide: [Developer Guide](documentation/developer-guide.md)**
+
+---
+
+## 🏛️ For Architects
+
+This framework implements several key architectural patterns:
+
+- **🔌 Plugin Architecture**: Dynamic endpoint discovery and registration
+- **🏗️ Builder Pattern**: Consistent request construction with feature composition
+- **🔄 Chain of Responsibility**: Sequential feature application (DCC, 3DS, AVS)
+- **📋 Registry Pattern**: Centralized endpoint and capability management
+- **🎯 Strategy Pattern**: Endpoint-specific implementations with common interfaces
+
+**📖 Complete architectural overview: [Architecture Guide](documentation/architecture-guide.md)**
+
+---
+
+## 📚 Documentation
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| [User Guide](documentation/user-guide.md) | Getting started, basic usage | End users, testers |
+| [Environment Setup](documentation/environment-setup.md) | Installation and configuration | All users |
+| [Configuration Guide](documentation/configuration-guide.md) | Test scenarios and settings | Test creators |
+| [CLI Reference](documentation/cli-reference.md) | Command-line options | All users |
+| [Testing Guide](documentation/testing-guide.md) | Writing and managing tests | Test developers |
+| [Developer Guide](documentation/developer-guide.md) | Extending the framework | Developers |
+| [Architecture Guide](documentation/architecture-guide.md) | System design and patterns | Architects, senior devs |
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run all unit tests
+pytest
+
+# Run with coverage
+pytest --cov=src
+
+# Run specific test category
+pytest tests/test_dcc_integration.py -v
+
+# Performance testing
+python -m src.main --tests smoke_tests.csv --threads 8 --verbose
 ```
 
-The framework automatically:
-- Extracts schemeTransactionId from initial COF responses
-- Links subsequent transactions via initialSchemeTransactionId
-- Handles both CIT and MIT transaction flows
+**Current Status**: 108/108 tests passing ✅
 
-## Contributing
+---
 
-1. Fork the repository
-2. Create feature branch
-3. Commit changes
-4. Push to branch  
-5. Submit pull request
+## 📋 Requirements
 
-## Support
+- **Python**: 3.9 or higher
+- **Dependencies**: See [requirements.txt](requirements.txt)
+- **API Access**: Worldline Acquiring API credentials
+- **Environment**: macOS, Linux, Windows (with Python)
 
-For issues, questions, or contributions:
-- Create GitHub issues for bugs/features
-- Check documentation in docs/ directory
-- Review test examples in config/test_suites/
+**📖 Detailed setup: [Environment Setup](documentation/environment-setup.md)**
 
-Built for comprehensive Worldline Acquiring API testing with enterprise-grade reliability.
+---
+
+## 🔒 Security
+
+- **Credentials**: Stored in `config/credentials/` (gitignored)
+- **API Keys**: Environment-specific configuration
+- **HTTPS**: All API communication encrypted
+- **Token Management**: Automatic OAuth2 token refresh
+
+**📖 Security details: [Configuration Guide](documentation/configuration-guide.md#security)**
+
+---
+
+## 🤝 Contributing
+
+1. **Check the guides**: [Developer Guide](documentation/developer-guide.md) for code patterns
+2. **Follow the architecture**: [Architecture Guide](documentation/architecture-guide.md) for design principles  
+3. **Update documentation**: Keep guides current with changes
+4. **Add tests**: Maintain 100% test coverage
+5. **Update changelog**: Document changes in [CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## 📞 Support
+
+- **📖 Documentation**: Start with [User Guide](documentation/user-guide.md)
+- **🐛 Issues**: Check existing issues or create new ones
+- **💡 Feature Requests**: Use issue templates
+- **❓ Questions**: Check documentation first, then create discussion
+
+---
+
+## 📄 License
+
+[License details to be added]
+
+---
+
+## 🏷️ Release Information
+
+- **Current Version**: 2.1.0
+- **Release Date**: August 15, 2025
+- **Major Features**: Dynamic Currency Conversion, Request Builder Pattern
+- **Compatibility**: Fully backward compatible with v2.0.0
+
+**📖 Full release history: [Changelog](CHANGELOG.md)**
+
+---
+
+*Built with ❤️ for comprehensive payment API testing*
