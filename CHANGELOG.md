@@ -11,6 +11,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance optimizations for high-volume testing
 - Enhanced error reporting and diagnostics
 - Additional payment method support
+- Terminal data and Point-of-Sale information support
+
+## [2.2.0] - 2025-08-15
+
+### Added
+- **Advanced API Properties Support**
+  - `isFinal` flag for partial capture control with sequence numbering
+  - `brandSelector` for payment brand selection (CARDHOLDER/MERCHANT) across 4 endpoints
+  - `scaExemptionRequest` for European SCA compliance (LOW_VALUE_PAYMENT, TRANSACTION_RISK_ANALYSIS, etc.)
+  - `reversalAmount` for partial authorization reversals
+  - Complete `MerchantData` support with merchant category codes, addresses, and location info
+- **Enhanced CSV Configuration**
+  - New `merchantdata.csv` file for comprehensive merchant information management
+  - Enhanced `threeddata.csv` with SCA exemption support (exemption-only scenarios supported)
+  - Support for 3DS + exemption combinations and exemption-only transactions
+- **Partial Operations Suite**
+  - Full partial capture capabilities with `isFinal` flag and `capture_sequence_number`
+  - Partial authorization reversal support with optional amount specification
+  - Smart handling of full vs. partial operations across all relevant endpoints
+- **Request Builder Enhancements**
+  - MerchantData integration across all 4 card-based endpoints (create_payment, standalone_refund, account_verification, balance_inquiry)
+  - Enhanced 3D Secure handling with SCA exemption support
+  - Consistent optional parameter patterns across all builders
+
+### Enhanced
+- **SCA Compliance Features**
+  - Exemption-only scenarios (no 3DS data required)
+  - Combined 3DS authentication + SCA exemption requests
+  - Full support for all exemption types: LOW_VALUE_PAYMENT, SCA_DELEGATION, SECURE_CORPORATE_PAYMENT, TRANSACTION_RISK_ANALYSIS, TRUSTED_BENEFICIARY
+- **Brand Selection Control**
+  - Merchant-controlled brand selection for payment optimization
+  - Cardholder-controlled brand selection for customer preference
+  - Applied consistently across payment, refund, verification, and inquiry operations
+
+### Technical
+- **Comprehensive Test Coverage**
+  - 267 total unit tests passing (up from 242)
+  - 111 request builder tests covering all new functionality
+  - Zero test regressions - all existing functionality preserved
+  - Comprehensive test scenarios for partial operations, SCA exemptions, and merchant data
+- **New Core Modules**
+  - `src/merchant_data.py` for merchant information handling
+  - Enhanced `src/threed_secure.py` with SCA exemption logic
+  - Updated request builders with consistent optional parameter handling
+- **Data-Driven Architecture**
+  - `merchantdata.csv` with complete merchant information schema
+  - `threeddata.csv` enhanced with `sca_exemption_requested` column
+  - Flexible CSV structure supporting both minimal and complete merchant data
+
+### Compatibility
+- ✅ **Fully backward compatible** - no breaking changes to existing functionality
+- ✅ **Existing configurations preserved** - all current test suites work unchanged
+- ✅ **Optional features** - new properties are opt-in via CSV configuration
+- ✅ **API compatible** - existing request structures remain unchanged
+- ✅ **DCC integration** - new features work seamlessly with existing DCC functionality
+
+### CSV Schema Updates
+- **merchantdata.csv**: `merchant_id,merchant_category_code,name,address,postal_code,city,state_code,country_code`
+- **threeddata.csv**: Added `sca_exemption_requested` column for SCA compliance
+- **Main test CSV**: Optional `brand_selector`, `merchant_data`, `is_final`, `capture_sequence_number` columns
 
 ## [2.1.0] - 2025-08-15
 
@@ -123,11 +183,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History Summary
 
+- **v2.2.0**: Advanced API Properties - Partial operations, SCA compliance, MerchantData, brand selection
 - **v2.1.0**: DCC Implementation - Major feature addition with backward compatibility
 - **v2.0.0**: Advanced Payment Features - Card-on-File, 3DS, Network Tokens, AVS
 - **v1.0.0**: Initial Release - Core payment testing framework
 
 ## Upgrade Notes
+
+### From v2.1.0 to v2.2.0
+- ✅ **No configuration changes required**
+- ✅ **Fully backward compatible**
+- New API properties are opt-in via CSV configuration
+- Add `merchantdata.csv` file to use merchant data features
+- Add `sca_exemption_requested` column to `threeddata.csv` for SCA compliance
+- All existing tests continue to work unchanged
 
 ### From v2.0.0 to v2.1.0
 - ✅ **No configuration changes required**
