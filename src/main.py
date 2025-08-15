@@ -16,7 +16,7 @@ import src.endpoints
 from .data_loader import load_data
 from .core.endpoint_registry import EndpointRegistry
 from .utils import create_temp_config
-from .api_calls import create_payment, increment_auth, capture, refund, get_payment, get_refund, reverse_authorization_call, standalone_refund_call, capture_refund_call
+from .api_calls import create_payment, increment_auth, capture, refund, get_payment, get_refund, reverse_authorization_call, standalone_refund_call, capture_refund_call, reverse_refund_authorization_call
 from .results_handler import create_success_result, create_error_result, create_dependency_error_result, save_results
 from .response_utils import update_previous_outputs, get_card_description
 from .request_builders import (
